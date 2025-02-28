@@ -1,0 +1,89 @@
+#DQN 방식
+# -> 1만번 학습에도 불구하고 정확도가 너무 낮음
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
+
+class AppleGameEnv(gym.Env):
+    def __init__(self):
+        super(AppleGameEnv, self).__init__()
+        self.rows = 10
+        self.cols = 17
+        self.board = np.random.randint(1, 10, (self.rows, self.cols))
+        self.valid_actions = []
+        for r1 in range(self.rows):
+            for c1 in range(self.cols):
+                for r2 in range(r1, self.rows):
+                    for c2 in range(c1, self.cols):
+                        self.valid_actions.append((r1, c1, r2, c2))
+        self.num_actions = len(self.valid_actions)
+        self.action_space = spaces.Discrete(self.num_actions)
+        self.observation_space = spaces.Box(low=0, high=9, shape=(self.rows, self.cols), dtype=np.int32)
+
+        self.max_time = 120  # 최대 스텝 수 (120초)
+        self.current_time = 0
+        self.score = 0
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.board = np.random.randint(1, 10, (self.rows, self.cols))
+        self.current_time = 0
+        self.score = 0
+        return self.board.copy().astype(np.int32), {}
+
+    def step(self, action):
+        self.current_time += 1
+        reward = -1
+        r1, c1, r2, c2 = self.valid_actions[action]
+        region = self.board[r1:r2+1, c1:c2+1]
+        selected_numbers = region[region != 0]
+        if selected_numbers.size > 0:
+            total = int(np.sum(selected_numbers))
+            if total == 10:
+                num_removed = selected_numbers.size
+                reward = num_removed
+                self.score += reward
+                region[region != 0] = 0
+                self.board[r1:r2+1, c1:c2+1] = region
+
+        # 게임 종료 조건: 시간 초과
+        terminated = False
+        truncated = False
+        if self.current_time >= self.max_time:
+            terminated = True
+            # 시간보너스
+            if self.score >= 50:
+                reward += 10
+
+        info = {"score": self.score, "time": self.current_time}
+        # 반환 전에 데이터 타입을 np.int32로 변환
+        return self.board.copy().astype(np.int32), reward, terminated, truncated, info
+
+    def render(self, mode="human"):
+        print("Time:", self.current_time, "Score:", self.score)
+        print(self.board)
+
+
+# -------------------------------------------------------
+
+from stable_baselines3.common.env_checker import check_env
+env = AppleGameEnv()
+check_env(env, warn=True)
+from stable_baselines3 import DQN
+model = DQN("MlpPolicy", env, verbose=1)
+model.learn(total_timesteps=50000)
+model.save("apple_game_dqn_model")
+print("모델 학습 및 저장 완료.")
+
+# -------------------------------------------------------
+# 학습된 모델로 자동 플레이 실행 예제
+obs, _ = env.reset()
+env.render()
+
+terminated = False
+while not terminated:
+    # 모델이 현재 상태에서 최적의 행동 예측
+    action, _ = model.predict(obs)
+    obs, reward, terminated, truncated, info = env.step(action)
+    env.render()
+    print("Action:", env.valid_actions[action], "Reward:", reward, "Info:", info)
