@@ -2,6 +2,7 @@
 
 예) python evaluate.py --ckpt checkpoints/best.pt --boards 1000
     python evaluate.py --ckpt checkpoints/best.pt --boards 100 --beam 16
+    python evaluate.py --ckpt checkpoints_az/best.pt --boards 100 --mcts 64
 """
 import argparse
 import time
@@ -11,6 +12,7 @@ import torch
 from applegame.env import RectIndex
 from applegame.model import AppleNet
 from applegame.policies import eval_boards, evaluate, greedy_min_policy, model_policy, random_policy
+from applegame.mcts import mcts_play
 from applegame.search import beam_search, rollout_search
 
 
@@ -28,6 +30,7 @@ def main():
     p.add_argument("--boards", type=int, default=1000)
     p.add_argument("--beam", type=int, default=0, help="빔 폭 (0이면 빔 서치 생략)")
     p.add_argument("--topk", type=int, default=8)
+    p.add_argument("--mcts", type=int, default=0, help="MCTS 시뮬레이션 횟수 (0이면 생략)")
     p.add_argument("--rollout", type=int, default=0, help="롤아웃 탐색으로 평가할 보드 수 (느림, 0이면 생략)")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = p.parse_args()
@@ -52,6 +55,9 @@ def main():
         t = time.time()
         scores = torch.tensor([rollout_search(b, rects, greedy_min_policy) for b in sub])
         report("롤아웃 탐색(탐욕)", scores, time.time() - t)
+    if model is not None and args.mcts:
+        t = time.time()
+        report(f"MCTS({args.mcts}회)", mcts_play(model, boards, args.mcts), time.time() - t)
     if model is not None and args.beam:
         t = time.time()
         scores = torch.tensor([beam_search(model, b, args.beam, args.topk) for b in boards])
