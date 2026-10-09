@@ -16,7 +16,7 @@ VALUE_SCALE = 10.0
 
 
 class Node:
-    __slots__ = ("board", "acts", "prior", "n_rm", "N", "W", "children", "value", "expanded", "terminal")
+    __slots__ = ("board", "acts", "prior", "prior0", "n_rm", "N", "W", "children", "value", "expanded", "terminal")
 
     def __init__(self, board):
         self.board = board          # (rows*cols,) int8 numpy
@@ -26,20 +26,30 @@ class Node:
         self.value = 0.0
 
     def expand(self, acts, prior, n_rm, value):
-        self.acts, self.prior, self.n_rm = acts, prior, n_rm
+        self.acts, self.prior, self.prior0, self.n_rm = acts, prior, prior, n_rm
         self.N = np.zeros(len(acts), dtype=np.float32)
         self.W = np.zeros(len(acts), dtype=np.float32)
         self.value = value
         self.expanded = True
         self.terminal = len(acts) == 0
 
-    def select(self, c_puct):
-        visited = self.N > 0
-        q = np.where(visited, self.W / np.maximum(self.N, 1), self.value)
+    def q_normalized(self):
+        """방문한 수는 평균 Q, 아직 안 간 수는 이 국면의 가치 추정치로 채운 뒤 0~1 정규화."""
+        q = np.where(self.N > 0, self.W / np.maximum(self.N, 1), self.value)
         lo, hi = min(q.min(), self.value), max(q.max(), self.value)
-        qn = (q - lo) / (hi - lo) if hi > lo else np.zeros_like(q)
+        return (q - lo) / (hi - lo) if hi > lo else np.zeros_like(q)
+
+    def select(self, c_puct):
         u = c_puct * self.prior * math.sqrt(self.N.sum() + 1) / (1 + self.N)
-        return int(np.argmax(qn + u))
+        return int(np.argmax(self.q_normalized() + u))
+
+    def improved_policy(self, c_scale, c_visit=50.0):
+        """Gumbel MuZero식 개선 정책: softmax(log P + (c_visit + max N) * c_scale * Q정규화).
+        방문 비율보다 Q 정보를 직접 반영하므로 시뮬레이션이 적어도 학습 신호가 선명하다."""
+        logits = np.log(self.prior0 + 1e-12) + (c_visit + self.N.max()) * c_scale * self.q_normalized()
+        logits -= logits.max()
+        p = np.exp(logits)
+        return p / p.sum()
 
 
 class BatchMCTS:

@@ -27,6 +27,9 @@ def parse_args():
     p.add_argument("--games", type=int, default=64, help="반복당 자기대국 판 수 (동시 진행)")
     p.add_argument("--sims", type=int, default=32, help="수당 MCTS 시뮬레이션 횟수")
     p.add_argument("--temp-moves", type=int, default=10, help="처음 몇 수는 방문 비율대로 샘플링 (탐험)")
+    p.add_argument("--target", choices=["qmix", "visits"], default="qmix",
+                   help="정책 정답: qmix = Gumbel MuZero식 Q 반영 개선 정책, visits = 방문 비율 (기존 AlphaZero)")
+    p.add_argument("--c-scale", type=float, default=0.1, help="qmix에서 Q를 얼마나 강하게 반영할지")
     p.add_argument("--buffer", type=int, default=100_000, help="최근 국면 저장 개수")
     p.add_argument("--train-steps", type=int, default=200, help="반복당 학습 스텝")
     p.add_argument("--batch", type=int, default=256)
@@ -44,7 +47,7 @@ def parse_args():
     return p.parse_args()
 
 
-def self_play(mcts, num_games, temp_moves, gen):
+def self_play(mcts, num_games, temp_moves, gen, target="qmix", c_scale=0.1):
     """num_games판을 동시에 끝까지 두고 (보드, 수 목록, 방문 분포, 남은 점수) 샘플을 반환."""
     boards = torch.randint(1, 10, (num_games, ROWS, COLS), generator=gen, dtype=torch.int8).numpy()
     roots = mcts.new_roots(boards)
@@ -56,9 +59,10 @@ def self_play(mcts, num_games, temp_moves, gen):
         visits = mcts.search([roots[g] for g in alive], add_noise=True)
         for g, n in zip(alive, visits):
             r = roots[g]
-            pi = n / n.sum()
+            visit_pi = n / n.sum()
+            pi = r.improved_policy(c_scale) if target == "qmix" else visit_pi
             records[g].append((r.board, r.acts, pi.astype(np.float32), scores[g]))
-            i = int(np.random.choice(len(pi), p=pi)) if moves < temp_moves else int(np.argmax(n))
+            i = int(np.random.choice(len(n), p=visit_pi)) if moves < temp_moves else int(np.argmax(n))
             scores[g] += r.n_rm[i]
             roots[g] = mcts.advance(r, i)
         new = [roots[g] for g in alive if not roots[g].expanded]
@@ -91,7 +95,7 @@ def main():
     args = parse_args()
     torch.manual_seed(args.seed); np.random.seed(args.seed); random.seed(args.seed)
     dev = args.device
-    print(f"장치: {dev} | 모델 {args.channels}채널 x {args.blocks}블록 | 시뮬레이션 {args.sims}", flush=True)
+    print(f"장치: {dev} | 모델 {args.channels}채널 x {args.blocks}블록 | 시뮬레이션 {args.sims} | 정답 {args.target}", flush=True)
     os.makedirs(args.out, exist_ok=True)
 
     rects = RectIndex(device=dev)
@@ -109,7 +113,7 @@ def main():
     for it in range(1, args.iters + 1):
         model.eval()
         t0 = time.time()
-        samples, scores = self_play(mcts, args.games, args.temp_moves, gen)
+        samples, scores = self_play(mcts, args.games, args.temp_moves, gen, args.target, args.c_scale)
         buffer.extend(samples)
         t1 = time.time()
 
