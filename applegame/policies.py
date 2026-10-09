@@ -48,5 +48,6 @@ def evaluate(policy, boards, rects=None, seed=0):
 
 
 def eval_boards(num=1000, seed=12345, device="cpu"):
-    gen = torch.Generator(device=device).manual_seed(seed)
-    return torch.randint(1, 10, (num, ROWS, COLS), generator=gen, device=device, dtype=torch.int8)
+    # CPU에서 생성해 옮긴다: GPU/CPU 어디서 돌려도 같은 평가 보드가 나오도록
+    gen = torch.Generator().manual_seed(seed)
+    return torch.randint(1, 10, (num, ROWS, COLS), generator=gen, dtype=torch.int8).to(device)

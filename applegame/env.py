@@ -42,8 +42,10 @@ class RectIndex:
             return m.view(len(a), -1)
 
         # 행동 -> 덮는 셀 마스크 (A, rows*cols)
-        self.cover = cover_of(r1, c1, r2, c2).to(device)
-        self.cover_t = self.cover.float().T.contiguous()
+        # (행렬은 모두 CPU에서 만든 뒤 마지막에 device로 옮긴다)
+        cover = cover_of(r1, c1, r2, c2)
+        self.cover = cover.to(device)
+        self.cover_t = cover.float().T.contiguous().to(device)
         # 정책 헤드용: [내부 | 좌상 모서리 | 우하 모서리] 셀 -> 행동 행렬 (3*cells, A)
         cells = rows * cols
         tl = torch.zeros(cells, self.num_actions)
@@ -51,7 +53,7 @@ class RectIndex:
         ar = torch.arange(self.num_actions)
         tl[r1 * cols + c1, ar] = 1
         br[r2 * cols + c2, ar] = 1
-        self.head_t = torch.cat([self.cover_t, tl, br], 0).to(device)
+        self.head_t = torch.cat([cover.float().T, tl, br], 0).contiguous().to(device)
         # 윗변/아랫변/왼변/오른변 포함 행렬: '꽉 끼는' 사각형 판정용
         edges = [cover_of(r1, c1, r1, c2), cover_of(r2, c1, r2, c2),
                  cover_of(r1, c1, r2, c1), cover_of(r1, c2, r2, c2)]
