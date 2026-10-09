@@ -42,6 +42,25 @@ v1의 '합이 9·11이면 +0.5' 보상은 보드를 바꾸지 않는 행동을 �
 - 가장 높은 점수는 학습이 필요 없는 롤아웃 탐색(130점)입니다. 다만 판당 6.5초가 걸리므로, 실제 120초 게임에서 쓰려면 매 수 계산 시간을 고려해야 합니다.
 - 다음 단계: 롤아웃/빔 서치 결과를 정답으로 삼아 정책을 모방 학습 → 다시 탐색 (AlphaZero식 전문가 반복), GPU에서 장시간 학습.
 
+### v3: AlphaZero식 학습 (`train_az.py`)
+MCTS 자기대국(정책망 = 사전확률, 가치망 = 남은 점수 예측) → 탐색 결과로 지도학습 → 반복.
+CPU 4코어, 32채널×3블록, 약 20분 학습. 같은 100판 평가 (탐욕 114.2):
+
+| 방법 | 100판 평균 | 120점 이상 | 판당 시간 |
+|---|---|---|---|
+| AZ 정책망 단독 (정답: 방문 비율) | 114.1 | 29% | 9ms |
+| AZ 정책망 단독 (정답: Gumbel식 qmix) | 114.3 | 37% | 9ms |
+| AZ 정책망 + MCTS 64회 (방문 비율) | 121.7 | 55% | 1.1s (수당 약 22ms) |
+| AZ 정책망 + MCTS 64회 (qmix) | 121.4 | 56% | 1.2s |
+| (참고) PPO 가치망 + 빔 서치 W=16 | 125.6 | 65% | 1.2s |
+
+**확인된 것 / 안 된 것**
+- 탐색을 붙이면 학습 방식과 무관하게 120점 이상이 안정적으로 나온다 (MCTS, 빔 서치, 롤아웃 모두).
+- **정책망 단독은 어떤 학습으로도 탐욕(약 114) 수준에서 멈췄다**: PPO, AZ(방문 비율), AZ(qmix), 롤아웃 교사 모방학습(오히려 107로 하락) 모두 동일.
+  정답 신호를 바꿔도 같은 지점에서 멈추므로, 병목은 정책 헤드의 표현력(사각형 점수 = 칸 점수의 합 + 모서리 점수)으로 추정한다.
+  표현력을 높인 `head="rich"` 옵션을 넣었지만 CPU에서 너무 느려 검증하지 못했다.
+- 실시간 관점: MCTS 64회는 수당 약 22ms라 120초 게임에 충분히 들어간다. 즉 **실전 투입은 "정책망 + MCTS"로 가능**하고, 정책망 단독 성능은 속도 최적화 과제다.
+
 ### 사용법
 ```bash
 pip install -r requirements.txt
@@ -50,6 +69,8 @@ python train.py --minutes 30 --channels 32 --blocks 3   # CPU용 작은 모델
 python evaluate.py --ckpt checkpoints/best.pt --boards 1000            # 기준선 vs 정책
 python evaluate.py --ckpt checkpoints/best.pt --boards 100 --beam 16   # + 빔 서치
 python evaluate.py --boards 50 --rollout 50                            # 롤아웃 탐색
+python train_az.py --minutes 60 --games 128 --sims 64                  # AlphaZero식 학습 (GPU 권장)
+python evaluate.py --ckpt checkpoints_az/last.pt --boards 100 --mcts 64
 ```
 `train.py`의 기본값은 64채널 4블록, 탐욕 초기화 20입니다. `evaluate.py`의 `--channels/--blocks`는 학습할 때와 같게 맞춰야 합니다.
 
@@ -58,6 +79,8 @@ python evaluate.py --boards 50 --rollout 50                            # 롤아�
 - `applegame/model.py` — ResNet 몸통 + 사각형 점수화 정책 헤드 + 가치 헤드
 - `applegame/policies.py` — 무작위/탐욕 기준선, 평가 루프
 - `applegame/search.py` — 가치망 빔 서치, 롤아웃 탐색
+- `applegame/mcts.py` — 배치 MCTS (PUCT, Gumbel식 개선 정책)
+- `train_az.py` — AlphaZero식 자기대국 학습
 - `train.py` — 마스킹 PPO 학습
 - `evaluate.py` — 고정 보드 비교 평가
 - `PPO_v1`, `DQN_code_1` — v1 코드 (기록용)

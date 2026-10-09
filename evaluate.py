@@ -44,7 +44,7 @@ def main():
         model = AppleNet(rects, args.channels, args.blocks).to(args.device)
         model.load_state_dict(torch.load(args.ckpt, map_location=args.device))
         model.eval()
-        runs.append(("PPO(탐욕적 행동)", model_policy(model)))
+        runs.append(("정책망 단독", model_policy(model)))
     for name, pol in runs:
         t = time.time()
         report(name, evaluate(pol, boards, rects), time.time() - t)
@@ -61,7 +61,7 @@ def main():
     if model is not None and args.beam:
         t = time.time()
         scores = torch.tensor([beam_search(model, b, args.beam, args.topk) for b in boards])
-        report(f"PPO+빔서치(W={args.beam})", scores, time.time() - t)
+        report(f"가치망+빔서치(W={args.beam})", scores, time.time() - t)
 
 
 if __name__ == "__main__":
