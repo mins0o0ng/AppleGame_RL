@@ -31,6 +31,7 @@ def main():
     p.add_argument("--rollout", type=int, default=0, help="롤아웃 탐색으로 평가할 보드 수 (느림, 0이면 생략)")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = p.parse_args()
+    print(f"장치: {args.device}", flush=True)
 
     rects = RectIndex(device=args.device)
     boards = eval_boards(args.boards, device=args.device)

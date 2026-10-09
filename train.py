@@ -46,6 +46,9 @@ def main():
     args = parse_args()
     torch.manual_seed(args.seed)
     dev = args.device
+    print(f"장치: {dev} | 모델 {args.channels}채널 x {args.blocks}블록", flush=True)
+    if dev == "cpu":
+        print("  !! GPU를 쓰지 않고 있습니다. CPU라면 --channels 32 --blocks 3 처럼 작은 모델을 권장합니다.", flush=True)
     os.makedirs(args.out, exist_ok=True)
 
     rects = RectIndex(device=dev)
