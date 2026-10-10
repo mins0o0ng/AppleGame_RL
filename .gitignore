@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 checkpoints/
 chrome_profile/
+debug_*.png
+dry_run.png
+web_dry_run.png
+capture_fail.png

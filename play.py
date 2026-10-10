@@ -47,11 +47,18 @@ class Screen:
         shot = self.sct.grab(self.mon)
         return np.asarray(shot)[..., [2, 1, 0]]  # BGRA -> RGB
 
-    def drag(self, x0, y0, x1, y1):
+    def drag(self, x0, y0, x1, y1, steps=10):
+        """실제 마우스 드래그. 브라우저가 드래그로 인식하도록 누른 뒤 잠깐 멈추고 여러 단계로 나눠 움직인다."""
         ox, oy = self.mon["left"], self.mon["top"]
         self.pg.moveTo(x0 + ox, y0 + oy)
+        time.sleep(0.03)
         self.pg.mouseDown()
-        self.pg.moveTo(x1 + ox, y1 + oy, duration=self.drag_time)
+        time.sleep(0.05)
+        for i in range(1, steps + 1):
+            t = i / steps
+            self.pg.moveTo(x0 + (x1 - x0) * t + ox, y0 + (y1 - y0) * t + oy)
+            time.sleep(self.drag_time / steps)
+        time.sleep(0.05)
         self.pg.mouseUp()
 
 
@@ -62,6 +69,30 @@ def drag_box(grid, move, expand=0.42):
     px = (cx[-1] - cx[0]) / (len(cx) - 1)
     py = (cy[-1] - cy[0]) / (len(cy) - 1)
     return (cx[c1] - expand * px, cy[r1] - expand * py, cx[c2] + expand * px, cy[r2] + expand * py)
+
+
+def _stable_read(screen, grid, settle, max_wait=1.5):
+    """드래그 후 사라지는 효과/애니메이션이 끝날 때까지 기다린다: 연속 두 번 같은 보드가 읽히면 확정."""
+    t0 = time.time()
+    time.sleep(settle)
+    img = screen.capture()
+    board, margin = read_board(img, grid)
+    while time.time() - t0 < max_wait:
+        time.sleep(max(settle, 0.05))
+        img2 = screen.capture()
+        board2, margin2 = read_board(img2, grid)
+        if (board2 == board).all():
+            return img2, board2, margin2
+        img, board, margin = img2, board2, margin2
+    return img, board, margin
+
+
+def _save_debug(before, after, grid, move, tag):
+    from PIL import Image, ImageDraw
+    for name, im in (("before", before), ("after", after)):
+        pic = Image.fromarray(np.ascontiguousarray(im))
+        ImageDraw.Draw(pic).rectangle(drag_box(grid, move), outline=(0, 0, 255), width=3)
+        pic.save(f"debug_{tag}_{name}.png")
 
 
 def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print):
@@ -89,25 +120,41 @@ def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print):
         if dry_run:
             log(f"[dry-run] 다음 수 {move} (사과 {n}개, 이후 예상 +{expect})")
             return board, grid, move
+        r1, c1, r2, c2 = move
+        expected = board.copy()
+        expected[r1:r2 + 1, c1:c2 + 1] = 0
+        before = img
         for expand in (0.42, 0.48):
             screen.drag(*drag_box(grid, move, expand))
-            time.sleep(settle)
-            img = screen.capture()
-            new, margin = read_board(img, grid)
+            img, new, margin = _stable_read(screen, grid, settle)
             if (new != board).any():
                 break
         if (new == board).all():
             fails += 1
             log(f"  !! 드래그가 반영되지 않음 {move} (누적 {fails})")
             if fails >= 3:
-                log("연속 실패: 화면/좌표를 확인하세요. 중단합니다.")
+                _save_debug(before, img, grid, move, "nochange")
+                log("연속 실패: 디버그 이미지(debug_nochange_*.png)를 저장하고 중단합니다.")
                 break
             continue
+        if (new != expected).any():
+            # 계획한 사과 말고 다른 칸도 바뀜: 화면 전환/효과/스크롤 등. 격자를 다시 찾아 한 번 더 확인
+            bad = int((new != expected).sum())
+            try:
+                grid = locate_grid(img)
+                new, margin = read_board(img, grid)
+            except ValueError:
+                pass
+            if (new != expected).any():
+                _save_debug(before, img, grid, move, "unexpected")
+                log(f"  !! 예상과 다른 화면 변화 ({bad}칸). 점수에 넣지 않고 중단합니다. "
+                    "debug_unexpected_before.png / after.png를 보내 주세요.")
+                break
+            log("  (격자 위치가 바뀌어 다시 찾음)")
         fails = 0
-        gained = int((board > 0).sum() - (new > 0).sum())
-        score += gained
+        score += n
         moves += 1
-        log(f"{moves:3d}수 {move} +{gained} = {score}점 ({time.time() - start:5.1f}초)")
+        log(f"{moves:3d}수 {move} +{n} = {score}점 ({time.time() - start:5.1f}초)")
         board = new
     log(f"끝: {score}점, {moves}수, {time.time() - start:.1f}초")
     return score
