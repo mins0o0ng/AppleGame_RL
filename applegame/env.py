@@ -74,9 +74,33 @@ class RectIndex:
         return legal, (nz @ self.cover_t).long()
 
 
+# 실제 게임 스크린샷(assets/sample_board.txt)에서 센 숫자 1~9 개수 (+1 평활화). 한 장 기준 추정치.
+REAL_DIGIT_COUNTS = [24, 32, 20, 22, 11, 20, 19, 12, 10]
+
+
+def sample_boards(k, gen=None, dist="uniform", device="cpu"):
+    """보드 k개 생성.
+    uniform: 1~9 균등 (기존)
+    real:    실제 게임에서 추정한 숫자 비율 + 전체 합이 10의 배수인 보드만 채택"""
+    if dist == "uniform":
+        return torch.randint(1, 10, (k, ROWS, COLS), generator=gen, device=device, dtype=torch.int8)
+    if dist != "real":
+        raise ValueError(f"알 수 없는 분포: {dist}")
+    w = torch.tensor(REAL_DIGIT_COUNTS, dtype=torch.float, device=device) + 1
+    out = []
+    need = k
+    while need > 0:
+        cand = torch.multinomial(w, (need * 12 + 16) * ROWS * COLS, replacement=True, generator=gen)
+        cand = (cand + 1).view(-1, ROWS, COLS).to(torch.int8)
+        ok = cand.long().sum((1, 2)) % 10 == 0
+        out.append(cand[ok][:need])
+        need -= len(out[-1])
+    return torch.cat(out)
+
+
 class BatchAppleEnv:
-    def __init__(self, num_envs, device="cpu", seed=None, rects=None):
-        self.n, self.device = num_envs, device
+    def __init__(self, num_envs, device="cpu", seed=None, rects=None, dist="uniform"):
+        self.n, self.device, self.dist = num_envs, device, dist
         self.rects = rects or RectIndex(device=device)
         self.gen = torch.Generator(device=device)
         if seed is not None:
@@ -86,7 +110,7 @@ class BatchAppleEnv:
         self._refresh()
 
     def _new_boards(self, k):
-        return torch.randint(1, 10, (k, ROWS, COLS), generator=self.gen, device=self.device, dtype=torch.int8)
+        return sample_boards(k, self.gen, self.dist, self.device)
 
     def _refresh(self):
         self.mask, self.n_removed = self.rects.legal(self.boards)

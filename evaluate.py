@@ -30,6 +30,8 @@ def main():
     p.add_argument("--boards", type=int, default=1000)
     p.add_argument("--beam", type=int, default=0, help="빔 폭 (0이면 빔 서치 생략)")
     p.add_argument("--topk", type=int, default=8)
+    p.add_argument("--dist", choices=["uniform", "real"], default="uniform",
+                   help="보드 분포: uniform = 1~9 균등, real = 실제 게임 추정 분포(작은 숫자 많음, 합 10의 배수)")
     p.add_argument("--mcts", type=int, default=0, help="MCTS 시뮬레이션 횟수 (0이면 생략)")
     p.add_argument("--rollout", type=int, default=0, help="롤아웃 탐색으로 평가할 보드 수 (느림, 0이면 생략)")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -37,7 +39,7 @@ def main():
     print(f"장치: {args.device}", flush=True)
 
     rects = RectIndex(device=args.device)
-    boards = eval_boards(args.boards, device=args.device)
+    boards = eval_boards(args.boards, device=args.device, dist=args.dist)
     runs = [("무작위(유효 수)", random_policy), ("탐욕(최소 제거)", greedy_min_policy)]
     model = None
     if args.ckpt:

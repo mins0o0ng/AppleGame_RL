@@ -35,6 +35,8 @@ def parse_args():
                    help="초기 정책을 탐욕(최소 제거) 쪽으로 기울이는 세기. 0이면 백지에서 시작")
     p.add_argument("--eval-every", type=int, default=20)
     p.add_argument("--eval-boards", type=int, default=200)
+    p.add_argument("--dist", choices=["uniform", "real"], default="uniform",
+                   help="보드 분포: uniform = 1~9 균등, real = 실제 게임 추정 분포(작은 숫자 많음, 합 10의 배수)")
     p.add_argument("--out", default="checkpoints")
     p.add_argument("--resume", default=None)
     p.add_argument("--seed", type=int, default=0)
@@ -52,12 +54,12 @@ def main():
     os.makedirs(args.out, exist_ok=True)
 
     rects = RectIndex(device=dev)
-    env = BatchAppleEnv(args.envs, device=dev, seed=args.seed, rects=rects)
+    env = BatchAppleEnv(args.envs, device=dev, seed=args.seed, rects=rects, dist=args.dist)
     model = AppleNet(rects, args.channels, args.blocks, args.greedy_prior).to(dev)
     if args.resume:
         model.load_state_dict(torch.load(args.resume, map_location=dev))
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    val_boards = eval_boards(args.eval_boards, seed=999, device=dev)  # 최종 평가용 보드와 시드가 다름
+    val_boards = eval_boards(args.eval_boards, seed=999, device=dev, dist=args.dist)  # 최종 평가용 보드와 시드가 다름
 
     T, N = args.steps, args.envs
     boards_buf = torch.zeros((T, N) + env.boards.shape[1:], dtype=torch.int8, device=dev)

@@ -1,7 +1,7 @@
 """기준선 정책과 평가 루프."""
 import torch
 
-from .env import ROWS, COLS, RectIndex
+from .env import ROWS, COLS, RectIndex, sample_boards
 
 
 def random_policy(boards, mask, n, gen=None):
@@ -47,7 +47,7 @@ def evaluate(policy, boards, rects=None, seed=0):
     return score
 
 
-def eval_boards(num=1000, seed=12345, device="cpu"):
+def eval_boards(num=1000, seed=12345, device="cpu", dist="uniform"):
     # CPU에서 생성해 옮긴다: GPU/CPU 어디서 돌려도 같은 평가 보드가 나오도록
     gen = torch.Generator().manual_seed(seed)
-    return torch.randint(1, 10, (num, ROWS, COLS), generator=gen, dtype=torch.int8).to(device)
+    return sample_boards(num, gen, dist).to(device)

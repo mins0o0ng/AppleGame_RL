@@ -14,7 +14,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from applegame.env import ROWS, COLS, RectIndex
+from applegame.env import ROWS, COLS, RectIndex, sample_boards
 from applegame.mcts import VALUE_SCALE, BatchMCTS, mcts_play
 from applegame.model import AppleNet
 from applegame.policies import eval_boards, evaluate, model_policy
@@ -40,6 +40,8 @@ def parse_args():
     p.add_argument("--greedy-prior", type=float, default=20.0)
     p.add_argument("--eval-every", type=int, default=5)
     p.add_argument("--eval-mcts", type=int, default=32, help="MCTS 평가 판 수 (0이면 생략)")
+    p.add_argument("--dist", choices=["uniform", "real"], default="uniform",
+                   help="보드 분포: uniform = 1~9 균등, real = 실제 게임 추정 분포(작은 숫자 많음, 합 10의 배수)")
     p.add_argument("--out", default="checkpoints_az")
     p.add_argument("--resume", default=None)
     p.add_argument("--seed", type=int, default=0)
@@ -47,9 +49,9 @@ def parse_args():
     return p.parse_args()
 
 
-def self_play(mcts, num_games, temp_moves, gen, target="qmix", c_scale=0.1):
+def self_play(mcts, num_games, temp_moves, gen, target="qmix", c_scale=0.1, dist="uniform"):
     """num_games판을 동시에 끝까지 두고 (보드, 수 목록, 방문 분포, 남은 점수) 샘플을 반환."""
-    boards = torch.randint(1, 10, (num_games, ROWS, COLS), generator=gen, dtype=torch.int8).numpy()
+    boards = sample_boards(num_games, gen, dist).numpy()
     roots = mcts.new_roots(boards)
     records = [[] for _ in roots]
     scores = np.zeros(num_games)
@@ -106,14 +108,14 @@ def main():
     mcts = BatchMCTS(model, args.sims)
     buffer = collections.deque(maxlen=args.buffer)
     gen = torch.Generator().manual_seed(args.seed)
-    val_boards = eval_boards(200, seed=999, device=dev)
-    mcts_boards = eval_boards(max(args.eval_mcts, 1), seed=998)
+    val_boards = eval_boards(200, seed=999, device=dev, dist=args.dist)
+    mcts_boards = eval_boards(max(args.eval_mcts, 1), seed=998, dist=args.dist)
 
     start, best = time.time(), -1.0
     for it in range(1, args.iters + 1):
         model.eval()
         t0 = time.time()
-        samples, scores = self_play(mcts, args.games, args.temp_moves, gen, args.target, args.c_scale)
+        samples, scores = self_play(mcts, args.games, args.temp_moves, gen, args.target, args.c_scale, args.dist)
         buffer.extend(samples)
         t1 = time.time()
 
