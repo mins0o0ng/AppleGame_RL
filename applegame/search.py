@@ -62,3 +62,19 @@ def rollout_search(board, rects, rollout_policy, gen=None, return_moves=False):
         score += n[0, a].item()
         moves.append(tuple(rects.rects[a].tolist()))
         board = board.masked_fill(rects.cover[a].view(ROWS, COLS), 0)
+
+
+@torch.no_grad()
+def rollout_best_move(board, rects, rollout_policy=None):
+    """현재 보드에서 롤아웃 탐색이 고르는 다음 한 수. 둘 수 없으면 None.
+    반환: ((r1, c1, r2, c2), 지울 사과 수, 이 수를 둔 뒤 예상 최종 추가 점수)"""
+    from .policies import evaluate, greedy_min_policy
+    rollout_policy = rollout_policy or greedy_min_policy
+    mask, n = rects.legal(board[None])
+    acts = mask[0].nonzero().squeeze(1)
+    if not len(acts):
+        return None
+    child = board[None].expand(len(acts), -1, -1).masked_fill(rects.cover[acts].view(-1, ROWS, COLS), 0)
+    total = n[0, acts] + evaluate(rollout_policy, child, rects)
+    j = int(total.argmax())
+    return tuple(rects.rects[acts[j]].tolist()), int(n[0, acts[j]]), int(total[j])

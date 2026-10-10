@@ -147,6 +147,13 @@ CPU 4코어, 32채널×3블록, 약 20분 학습. 같은 100판 평가 (탐욕 1
 - 학습이 필요 없는 롤아웃 탐색은 실제 보드에서도 탐욕보다 평균 8점 높고, 판당 10초 이내(수당 0.2초 이하)라 실시간에도 쓸 수 있다.
   → **실전 플레이는 롤아웃 탐색을 기본으로 한다.**
 
+### 실제 게임 자동 플레이 (`play.py`, 본인 PC에서 실행)
+화면 캡처(mss) → 게임판 위치 찾기(`locate_grid`) → 보드 인식 → 롤아웃 탐색으로 한 수 → 마우스 드래그(pyautogui) → 다시 캡처해 반영 확인을 반복.
+- Windows 화면 배율 대응(DPI 인식 설정), 드래그가 반영 안 되면 상자를 넓혀 재시도, 3번 연속 실패하면 중단
+- 시뮬레이터 검증(가짜 1920x1080 화면 + 방해용 빨간 요소): 보드 1 = 170점(73수), 보드 5 = 100점, 보드 9 = 140점, 드래그 실패 0회
+- 실제 브라우저에서는 아직 검증 전 (이 개발 환경에서 해당 사이트 접속 불가)
+- 공개 랭킹이 있는 게임이라면 봇 점수는 등록하지 말 것
+
 ### 사용법
 ```bash
 pip install -r requirements.txt
@@ -157,6 +164,8 @@ python evaluate.py --ckpt checkpoints/best.pt --boards 100 --beam 16   # + 빔 �
 python evaluate.py --boards 50 --rollout 50                            # 롤아웃 탐색
 python train_az.py --minutes 60 --games 128 --sims 64                  # AlphaZero식 학습 (GPU 권장)
 python solve_image.py assets/board_1.png                          # 스크린샷 -> 보드 인식 -> 둘 수 순서
+python play.py --dry-run                                               # (본인 PC) 화면 인식과 첫 수만 확인
+python play.py                                                         # (본인 PC) 자동 플레이
 python evaluate.py --ckpt checkpoints_az/last.pt --boards 100 --mcts 64
 python evaluate.py --ckpt checkpoints_az/last.pt --mcts 64 --real flat   # 실제 스크린샷 보드로 평가
 ```

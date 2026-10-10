@@ -1,3 +1,6 @@
 torch>=2.0
 numpy
 pillow
+# 실제 게임 자동 플레이(play.py)용
+mss
+pyautogui

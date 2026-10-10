@@ -55,6 +55,23 @@ def detect_grid(img):
     return cx, cy, size
 
 
+def locate_grid(img):
+    """전체 화면 캡처처럼 게임판 바깥(다른 창, 버튼 등)이 섞인 이미지에서 격자를 찾는다.
+    빨간 픽셀이 많이 몰린 행/열 범위로 게임판 영역을 잘라낸 뒤 detect_grid를 적용하고 화면 좌표로 되돌린다."""
+    a = load_rgb(img)
+    red = red_mask(a)
+    cs, rs = red.sum(0), red.sum(1)
+    if cs.max() == 0:
+        raise ValueError("화면에서 빨간 사과를 찾지 못했습니다. 게임판이 보이는지 확인하세요.")
+    xs = np.nonzero(cs > 0.3 * cs.max())[0]
+    ys = np.nonzero(rs > 0.3 * rs.max())[0]
+    pad = 10
+    x0, x1 = max(0, xs.min() - pad), min(a.shape[1], xs.max() + pad + 1)
+    y0, y1 = max(0, ys.min() - pad), min(a.shape[0], ys.max() + pad + 1)
+    cx, cy, size = detect_grid(a[y0:y1, x0:x1])
+    return cx + x0, cy + y0, size
+
+
 def _cell(a, x, y, size):
     h = int(size / 2)
     return a[max(0, int(y) - h):int(y) + h + 1, max(0, int(x) - h):int(x) + h + 1]
