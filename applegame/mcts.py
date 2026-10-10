@@ -150,3 +150,20 @@ def mcts_play(model, boards, sims=32):
             mcts._evaluate(new)
         alive = [g for g in nxt if not roots[g].terminal]
     return torch.tensor(scores)
+
+
+@torch.no_grad()
+def mcts_plan(model, board, sims=64):
+    """보드 하나를 MCTS로 끝까지 두고 (점수, [(r1, c1, r2, c2), ...]) 반환."""
+    mcts = BatchMCTS(model, sims)
+    root = mcts.new_roots(board.cpu().numpy()[None])[0]
+    score, moves = 0, []
+    while not root.terminal:
+        mcts.search([root])
+        i = int(np.argmax(root.N))
+        score += int(root.n_rm[i])
+        moves.append(tuple(model.rects.rects[root.acts[i]].tolist()))
+        root = mcts.advance(root, i)
+        if not root.expanded:
+            mcts._evaluate([root])
+    return score, moves

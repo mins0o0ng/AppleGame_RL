@@ -62,3 +62,20 @@ class AppleNet(nn.Module):
         logits = logits.masked_fill(~mask, -1e9)
         pooled = torch.cat([h.mean((2, 3)), h.amax((2, 3))], 1)
         return logits, self.value(pooled).squeeze(-1)
+
+
+def save_model(model, path, channels, blocks, head="linear"):
+    """크기 정보까지 함께 저장 (load_model로 옵션 없이 불러올 수 있게)."""
+    torch.save({"state_dict": model.state_dict(), "channels": channels, "blocks": blocks, "head": head}, path)
+
+
+def load_model(path, rects, channels=64, blocks=4, device="cpu"):
+    """save_model 형식이면 저장된 크기를, state_dict만 있으면 인자로 받은 크기를 쓴다."""
+    ck = torch.load(path, map_location=device)
+    if isinstance(ck, dict) and "state_dict" in ck:
+        model = AppleNet(rects, ck["channels"], ck["blocks"], head=ck.get("head", "linear"))
+        model.load_state_dict(ck["state_dict"])
+    else:
+        model = AppleNet(rects, channels, blocks)
+        model.load_state_dict(ck)
+    return model.to(device).eval()

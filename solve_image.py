@@ -12,6 +12,8 @@ import numpy as np
 import torch
 
 from applegame.env import RectIndex
+from applegame.mcts import mcts_plan
+from applegame.model import load_model
 from applegame.policies import greedy_min_policy
 from applegame.search import rollout_search
 from applegame.vision import read_board
@@ -21,6 +23,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("image")
     p.add_argument("--save-label", action="store_true")
+    p.add_argument("--ckpt", default=None, help="학습된 모델 (있으면 MCTS, 없으면 롤아웃 탐색)")
+    p.add_argument("--sims", type=int, default=64)
     args = p.parse_args()
 
     board, margin = read_board(args.image)
@@ -38,8 +42,14 @@ def main():
         print("저장:", out)
 
     rects = RectIndex()
-    score, moves = rollout_search(torch.tensor(board), rects, greedy_min_policy, return_moves=True)
-    print(f"\n롤아웃 탐색 예상 점수: {score} / {int((board > 0).sum())}  ({len(moves)}수)")
+    if args.ckpt:
+        model = load_model(args.ckpt, rects)
+        score, moves = mcts_plan(model, torch.tensor(board), args.sims)
+        name = f"MCTS({args.sims}회)"
+    else:
+        score, moves = rollout_search(torch.tensor(board), rects, greedy_min_policy, return_moves=True)
+        name = "롤아웃 탐색"
+    print(f"\n{name} 예상 점수: {score} / {int((board > 0).sum())}  ({len(moves)}수)")
     for i, (r1, c1, r2, c2) in enumerate(moves, 1):
         print(f"{i:3d}. ({r1},{c1}) -> ({r2},{c2})")
 

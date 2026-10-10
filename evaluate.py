@@ -12,7 +12,7 @@ import numpy as np
 import torch
 
 from applegame.env import RectIndex
-from applegame.model import AppleNet
+from applegame.model import load_model
 from applegame.policies import eval_boards, evaluate, greedy_min_policy, model_policy, random_policy
 from applegame.mcts import mcts_play
 from applegame.search import beam_search, rollout_search
@@ -54,9 +54,7 @@ def main():
     runs = [("무작위(유효 수)", random_policy), ("탐욕(최소 제거)", greedy_min_policy)]
     model = None
     if args.ckpt:
-        model = AppleNet(rects, args.channels, args.blocks).to(args.device)
-        model.load_state_dict(torch.load(args.ckpt, map_location=args.device))
-        model.eval()
+        model = load_model(args.ckpt, rects, args.channels, args.blocks, args.device)
         runs.append(("정책망 단독", model_policy(model)))
     for name, pol in runs:
         t = time.time()
