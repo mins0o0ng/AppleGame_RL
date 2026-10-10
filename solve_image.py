@@ -1,6 +1,6 @@
 """게임 스크린샷 -> 보드 인식 -> 롤아웃 탐색으로 둘 수 순서 출력.
 
-예) python solve_image.py assets/sample_board.png
+예) python solve_image.py assets/board_1.png
     python solve_image.py my_screenshot.png --save-label   # 인식 결과를 .txt로 저장 (분포 수집용)
 
 스크린샷은 사과가 모두 있는 시작 화면에서 게임판 영역 위주로 캡처하세요.

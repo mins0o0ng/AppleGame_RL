@@ -13,7 +13,7 @@ from PIL import Image
 from .env import ROWS, COLS
 
 FEAT_W, FEAT_H = 10, 14
-TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "digit_templates.npy")
+TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "digit_templates.npz")
 
 
 def load_rgb(img):
@@ -90,14 +90,21 @@ def board_features(img, grid):
     return present, feats
 
 
-def build_templates(img, labels, path=TEMPLATE_PATH):
-    """라벨이 있는 화면으로 숫자 1~9 평균 템플릿을 만들어 저장."""
-    grid = detect_grid(img)
-    present, feats = board_features(img, grid)
-    labels = np.asarray(labels)
-    tmpl = np.stack([feats[(labels == d) & present].mean(0) for d in range(1, 10)])
-    np.save(path, tmpl)
-    return tmpl
+def build_templates(samples, path=TEMPLATE_PATH):
+    """라벨이 있는 화면들 [(이미지, 10x17 라벨), ...]로 화면(디자인)마다 숫자 1~9 평균 템플릿을 만들어 저장.
+    사과 디자인이 다른 버전이 있어도 템플릿을 모두 모아 최근접 비교하므로 함께 인식된다."""
+    feats_all, digits = [], []
+    for img, labels in samples:
+        present, feats = board_features(img, detect_grid(img))
+        labels = np.asarray(labels)
+        for d in range(1, 10):
+            sel = (labels == d) & present
+            if sel.any():
+                feats_all.append(feats[sel].mean(0)); digits.append(d)
+    feats_all, digits = np.stack(feats_all), np.array(digits)
+    if path:
+        np.savez(path, feats=feats_all, digits=digits)
+    return feats_all, digits
 
 
 def read_board(img, grid=None, templates=None):
@@ -105,11 +112,14 @@ def read_board(img, grid=None, templates=None):
     if grid is None:
         grid = detect_grid(img)
     if templates is None:
-        templates = np.load(TEMPLATE_PATH)
+        t = np.load(TEMPLATE_PATH)
+        templates = (t["feats"], t["digits"])
+    tf, td = templates
     present, feats = board_features(img, grid)
-    d = ((feats[..., None, :] - templates[None, None]) ** 2).sum(-1)   # (R, C, 9)
-    order = np.sort(d, -1)
-    board = (d.argmin(-1) + 1) * present
+    dist = ((feats[..., None, :] - tf[None, None]) ** 2).sum(-1)          # (R, C, 템플릿 수)
+    per_digit = np.stack([dist[..., td == d].min(-1) for d in range(1, 10)], -1)
+    order = np.sort(per_digit, -1)
+    board = (per_digit.argmin(-1) + 1) * present
     margin = np.where(present, order[..., 1] - order[..., 0], np.inf)
     return board.astype(np.int8), margin
 

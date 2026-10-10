@@ -6,6 +6,7 @@
 - 보상: 지운 사과 개수 (= 실제 게임 점수)
 - 종료: 더 이상 유효 행동이 없을 때
 """
+import numpy as np
 import torch
 
 ROWS, COLS = 10, 17
@@ -74,28 +75,59 @@ class RectIndex:
         return legal, (nz @ self.cover_t).long()
 
 
-# 실제 게임 스크린샷(assets/sample_board.txt)에서 센 숫자 1~9 개수 (+1 평활화). 한 장 기준 추정치.
-REAL_DIGIT_COUNTS = [24, 32, 20, 22, 11, 20, 19, 12, 10]
+def _composition(k, rng):
+    """10을 1~9 사이 양의 정수 k개로 나누는 균등 무작위 조합."""
+    while True:
+        cuts = np.sort(rng.choice(np.arange(1, 10), k - 1, replace=False))
+        parts = np.diff(np.concatenate([[0], cuts, [10]]))
+        if (parts <= 9).all():
+            return rng.permutation(parts)
+
+
+def reverse_board(rng, max_h=3, max_w=4, sizes=(2, 3), size_p=(0.6, 0.4)):
+    """실제 게임(기존 사과 디자인) 보드를 흉내 내는 역순 생성기.
+
+    빈 칸만 있는 사각형(최대 max_h x max_w)을 고르고, 그 안 일부 칸(2~3개)에 합이 10인 숫자를 채우는 것을 반복한다.
+    나중에 채운 묶음일수록 먼저 지우면 되므로, 이렇게 만든 묶음은 순서만 맞으면 모두 지울 수 있다.
+    끝까지 못 채운 칸은 무작위로 채우되 전체 합이 10의 배수가 되게 한다.
+    스크린샷 4장과 비교: 처음 가능 수 93 vs 88.5, 탐욕 159 vs 161.5, 작은 숫자 편중도 비슷함 (README 참고)."""
+    b = np.zeros((ROWS, COLS), np.int64)
+    fails = 0
+    while fails < 500:
+        h, w = rng.integers(1, max_h + 1), rng.integers(1, max_w + 1)
+        k = rng.choice(sizes, p=size_p)
+        if h * w < k:
+            fails += 1
+            continue
+        r0, c0 = rng.integers(0, ROWS - h + 1), rng.integers(0, COLS - w + 1)
+        region = b[r0:r0 + h, c0:c0 + w]
+        if (region == 0).all():
+            flat = region.ravel().copy()
+            flat[rng.choice(h * w, k, replace=False)] = _composition(k, rng)
+            b[r0:r0 + h, c0:c0 + w] = flat.reshape(h, w)
+            fails = 0
+        else:
+            fails += 1
+    left = b == 0
+    while True:
+        b[left] = rng.integers(1, 10, left.sum())
+        if b.sum() % 10 == 0:
+            return b
 
 
 def sample_boards(k, gen=None, dist="uniform", device="cpu"):
     """보드 k개 생성.
     uniform: 1~9 균등 (기존)
-    real:    실제 게임에서 추정한 숫자 비율 + 전체 합이 10의 배수인 보드만 채택"""
+    real:    실제 게임(기존 사과 디자인) 추정 생성 방식 (reverse_board)"""
     if dist == "uniform":
         return torch.randint(1, 10, (k, ROWS, COLS), generator=gen, device=device, dtype=torch.int8)
     if dist != "real":
         raise ValueError(f"알 수 없는 분포: {dist}")
-    w = torch.tensor(REAL_DIGIT_COUNTS, dtype=torch.float, device=device) + 1
-    out = []
-    need = k
-    while need > 0:
-        cand = torch.multinomial(w, (need * 12 + 16) * ROWS * COLS, replacement=True, generator=gen)
-        cand = (cand + 1).view(-1, ROWS, COLS).to(torch.int8)
-        ok = cand.long().sum((1, 2)) % 10 == 0
-        out.append(cand[ok][:need])
-        need -= len(out[-1])
-    return torch.cat(out)
+    gdev = gen.device if gen is not None else "cpu"
+    seed = int(torch.randint(0, 2**31 - 1, (1,), generator=gen, device=gdev))
+    rng = np.random.default_rng(seed)
+    boards = np.stack([reverse_board(rng) for _ in range(k)])
+    return torch.from_numpy(boards).to(torch.int8).to(device)
 
 
 class BatchAppleEnv:
@@ -105,12 +137,22 @@ class BatchAppleEnv:
         self.gen = torch.Generator(device=device)
         if seed is not None:
             self.gen.manual_seed(seed)
+        self.pool = None
+        if dist != "uniform":
+            # 생성이 느린 분포는 보드 묶음을 미리 만들어 두고 상하/좌우 뒤집기로 변형해 재사용
+            self.pool = sample_boards(2048, self.gen, dist, device)
         self.boards = self._new_boards(num_envs)
         self.score = torch.zeros(num_envs, dtype=torch.long, device=device)
         self._refresh()
 
     def _new_boards(self, k):
-        return sample_boards(k, self.gen, self.dist, self.device)
+        if self.pool is None:
+            return sample_boards(k, self.gen, self.dist, self.device)
+        idx = torch.randint(0, len(self.pool), (k,), generator=self.gen, device=self.device)
+        b = self.pool[idx]
+        flip = torch.randint(0, 4, (k,), generator=self.gen, device=self.device)
+        b = torch.where((flip % 2 == 1)[:, None, None], b.flip(1), b)
+        return torch.where((flip >= 2)[:, None, None], b.flip(2), b)
 
     def _refresh(self):
         self.mask, self.n_removed = self.rects.legal(self.boards)
