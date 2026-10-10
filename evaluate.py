@@ -1,0 +1,79 @@
+"""고정된 평가 보드에서 기준선과 학습 모델을 비교.
+
+예) python evaluate.py --ckpt checkpoints/best.pt --boards 1000
+    python evaluate.py --ckpt checkpoints/best.pt --boards 100 --beam 16
+    python evaluate.py --ckpt checkpoints_az/best.pt --boards 100 --mcts 64
+"""
+import argparse
+import os
+import time
+
+import numpy as np
+import torch
+
+from applegame.env import RectIndex
+from applegame.model import load_model
+from applegame.policies import eval_boards, evaluate, greedy_min_policy, model_policy, random_policy
+from applegame.mcts import mcts_play
+from applegame.search import beam_search, rollout_search
+
+
+def report(name, scores, sec):
+    s = scores.float()
+    print(f"{name:22s} 평균 {s.mean():6.1f} ± {s.std() / len(s) ** 0.5:.1f} | 최고 {s.max():4.0f} "
+          f"| 120점 이상 {(s >= 120).float().mean() * 100:5.1f}% | 판당 {sec / len(s) * 1000:.0f}ms")
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--ckpt", default=None)
+    p.add_argument("--channels", type=int, default=64)
+    p.add_argument("--blocks", type=int, default=4)
+    p.add_argument("--boards", type=int, default=1000)
+    p.add_argument("--beam", type=int, default=0, help="빔 폭 (0이면 빔 서치 생략)")
+    p.add_argument("--topk", type=int, default=8)
+    p.add_argument("--dist", choices=["uniform", "round", "real", "flat"], default="uniform",
+                   help="보드 분포: uniform = 1~9 균등, round(=real) = 둥근 사과 버전 추정, flat = 납작한 사과 버전 추정")
+    p.add_argument("--mcts", type=int, default=0, help="MCTS 시뮬레이션 횟수 (0이면 생략)")
+    p.add_argument("--real", default=None,
+                   help="생성 보드 대신 실제 스크린샷 라벨로 평가. 예: flat(납작한 사과 5~10), round(둥근 사과 1~4), 또는 5,6,7")
+    p.add_argument("--rollout", type=int, default=0, help="롤아웃 탐색으로 평가할 보드 수 (느림, 0이면 생략)")
+    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    args = p.parse_args()
+    print(f"장치: {args.device}", flush=True)
+
+    rects = RectIndex(device=args.device)
+    if args.real:
+        ids = {"round": "1,2,3,4", "flat": "5,6,7,8,9,10"}.get(args.real, args.real)
+        here = os.path.dirname(os.path.abspath(__file__))
+        boards = torch.tensor(np.stack([np.loadtxt(os.path.join(here, "assets", f"board_{i}.txt"), dtype=int)
+                                        for i in ids.split(",")]), dtype=torch.int8, device=args.device)
+        print(f"실제 보드 {ids} ({len(boards)}장)")
+    else:
+        boards = eval_boards(args.boards, device=args.device, dist=args.dist)
+    runs = [("무작위(유효 수)", random_policy), ("탐욕(최소 제거)", greedy_min_policy)]
+    model = None
+    if args.ckpt:
+        model = load_model(args.ckpt, rects, args.channels, args.blocks, args.device)
+        runs.append(("정책망 단독", model_policy(model)))
+    for name, pol in runs:
+        t = time.time()
+        report(name, evaluate(pol, boards, rects), time.time() - t)
+    if args.rollout:
+        sub = boards[:args.rollout]
+        t = time.time()
+        report("탐욕 기준 비교(부분집합)", evaluate(greedy_min_policy, sub, rects), time.time() - t)
+        t = time.time()
+        scores = torch.tensor([rollout_search(b, rects, greedy_min_policy) for b in sub])
+        report("롤아웃 탐색(탐욕)", scores, time.time() - t)
+    if model is not None and args.mcts:
+        t = time.time()
+        report(f"MCTS({args.mcts}회)", mcts_play(model, boards, args.mcts), time.time() - t)
+    if model is not None and args.beam:
+        t = time.time()
+        scores = torch.tensor([beam_search(model, b, args.beam, args.topk) for b in boards])
+        report(f"가치망+빔서치(W={args.beam})", scores, time.time() - t)
+
+
+if __name__ == "__main__":
+    main()
