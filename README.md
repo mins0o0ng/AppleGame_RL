@@ -76,6 +76,25 @@ CPU 4코어, 32채널×3블록, 약 20분 학습. 같은 100판 평가 (탐욕 1
   표현력을 높인 `head="rich"` 옵션을 넣었지만 CPU에서 너무 느려 검증하지 못했다.
 - 실시간 관점: MCTS 64회는 수당 약 22ms라 120초 게임에 충분히 들어간다. 즉 **실전 투입은 "정책망 + MCTS"로 가능**하고, 정책망 단독 성능은 속도 최적화 과제다.
 
+### 실제 게임 보드 인식 (`applegame/vision.py`, `solve_image.py`)
+범용 OCR 대신 템플릿 매칭: 빨간 사과 픽셀 투영으로 17x10 격자를 찾고, 칸마다 흰 숫자를 잘라 숫자 1~9 템플릿과 비교.
+- 정확도: 같은 화면 아래 5행 홀드아웃 100%, 화면 배율 0.6~1.7배 100%, 빈 칸 포함 100% (스크린샷 1장 기준)
+
+**실제 보드 1장 분석 결과 — 학습용 무작위 보드와 분포가 다르다**
+
+| | 실제 보드 (1장) | 균등 무작위 보드 |
+|---|---|---|
+| 숫자 합 | 730 (10의 배수) | 10의 배수일 확률 10% |
+| 숫자별 개수 1~9 | 24, 32, 20, 22, 11, 20, 19, 12, 10 | 각 약 18.9 |
+| 처음 가능한 수 | 98 | 평균 54.6 |
+| 무작위 플레이 | 147.6 | 103.4 |
+| 탐욕 | 161 | 113.7 |
+| 롤아웃 탐색 / AZ+MCTS 64회 | **170 (전부 제거)** | 130 / 122.6 |
+
+한 장이라 일반화할 수는 없지만, 실제 게임은 작은 숫자가 많고 합을 10의 배수로 맞추는 것으로 보인다.
+지금까지의 점수 비교(114, 125, 130)는 실제 게임보다 훨씬 어려운 보드 기준이다.
+→ 실제 스크린샷을 더 모아(`solve_image.py --save-label`) 분포를 추정하고, 그 분포로 평가해야 한다.
+
 ### 사용법
 ```bash
 pip install -r requirements.txt
@@ -85,6 +104,7 @@ python evaluate.py --ckpt checkpoints/best.pt --boards 1000            # 기준�
 python evaluate.py --ckpt checkpoints/best.pt --boards 100 --beam 16   # + 빔 서치
 python evaluate.py --boards 50 --rollout 50                            # 롤아웃 탐색
 python train_az.py --minutes 60 --games 128 --sims 64                  # AlphaZero식 학습 (GPU 권장)
+python solve_image.py assets/sample_board.png                          # 스크린샷 -> 보드 인식 -> 둘 수 순서
 python evaluate.py --ckpt checkpoints_az/last.pt --boards 100 --mcts 64
 ```
 `train.py`의 기본값은 64채널 4블록, 탐욕 초기화 20입니다. `evaluate.py`의 `--channels/--blocks`는 학습할 때와 같게 맞춰야 합니다.

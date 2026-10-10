@@ -44,19 +44,21 @@ def beam_search(model, board, width=16, topk=8, value_scale=10.0):
 
 
 @torch.no_grad()
-def rollout_search(board, rects, rollout_policy, gen=None):
+def rollout_search(board, rects, rollout_policy, gen=None, return_moves=False):
     """1-수 앞보기 롤아웃: 모든 유효 수를 두어 본 뒤 각각 rollout_policy로 끝까지 진행해
-    (즉시 점수 + 롤아웃 점수)가 가장 큰 수를 고른다. 롤아웃 정책보다 나빠지지 않는다."""
+    (즉시 점수 + 롤아웃 점수)가 가장 큰 수를 고른다. 롤아웃 정책보다 나빠지지 않는다.
+    return_moves=True면 (점수, [(r1, c1, r2, c2), ...])를 반환."""
     from .policies import evaluate
     board = board.clone()
-    score = 0
+    score, moves = 0, []
     while True:
         mask, n = rects.legal(board[None])
         acts = mask[0].nonzero().squeeze(1)
         if not len(acts):
-            return score
+            return (score, moves) if return_moves else score
         child = board[None].expand(len(acts), -1, -1).masked_fill(rects.cover[acts].view(-1, ROWS, COLS), 0)
         total = n[0, acts] + evaluate(rollout_policy, child, rects)
         a = acts[total.argmax()]
         score += n[0, a].item()
+        moves.append(tuple(rects.rects[a].tolist()))
         board = board.masked_fill(rects.cover[a].view(ROWS, COLS), 0)
