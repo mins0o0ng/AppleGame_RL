@@ -1,0 +1,48 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>mock apple game</title>
+<style>
+  body { margin: 0; background: #f5f5f5; font-family: sans-serif; }
+  #bar { height: 60px; display: flex; align-items: center; gap: 20px; padding: 0 20px; }
+  #start { background: #e33; color: #fff; padding: 8px 16px; border-radius: 6px; }
+  #wrap { position: relative; margin: 30px 0 0 120px; display: inline-block; user-select: none; }
+  #board { display: block; }
+  .gone { position: absolute; }
+  #sel { position: absolute; border: 2px solid #36f; background: rgba(50,100,255,.1); display: none; pointer-events: none; }
+</style></head>
+<body>
+<div id="bar"><span id="start">START</span><span>점수 <b id="score">0</b></span><span id="msg"></span></div>
+<div id="wrap"><img id="board" draggable="false"><div id="sel"></div></div>
+<script>
+// 테스트용 가짜 사과게임: ?board=이미지&cells=JSON(행,열 중심 좌표와 숫자) 로 초기화
+// 드래그한 사각형 안에 중심이 들어온 사과들의 합이 10이면 지운다. 신뢰된(사용자) 입력만 받는다.
+const P = new URLSearchParams(location.search);
+const G = JSON.parse(decodeURIComponent(P.get('g')));   // {img, cx[], cy[], size, bg, board[][]}
+const img = document.getElementById('board'), wrap = document.getElementById('wrap'), sel = document.getElementById('sel');
+img.src = G.img; img.style.width = G.w + 'px'; img.style.height = G.h + 'px';
+let start = null, score = 0, untrusted = 0;
+function rel(e) { const r = wrap.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+wrap.addEventListener('mousedown', e => { if (!e.isTrusted) { untrusted++; return; } start = rel(e); });
+window.addEventListener('mousemove', e => {
+  if (!start) return; const [x, y] = rel(e);
+  Object.assign(sel.style, {display: 'block', left: Math.min(x, start[0]) + 'px', top: Math.min(y, start[1]) + 'px',
+    width: Math.abs(x - start[0]) + 'px', height: Math.abs(y - start[1]) + 'px'});
+});
+window.addEventListener('mouseup', e => {
+  if (!start) return; const [x, y] = rel(e); sel.style.display = 'none';
+  const x0 = Math.min(x, start[0]), x1 = Math.max(x, start[0]), y0 = Math.min(y, start[1]), y1 = Math.max(y, start[1]);
+  start = null; const hit = []; let sum = 0;
+  G.cy.forEach((cy, r) => G.cx.forEach((cx, c) => {
+    if (G.board[r][c] && cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) { hit.push([r, c]); sum += G.board[r][c]; }
+  }));
+  if (sum !== 10) return;
+  for (const [r, c] of hit) {
+    G.board[r][c] = 0; score++;
+    const d = document.createElement('div'); d.className = 'gone';
+    const h = G.size / 2 + 3;
+    Object.assign(d.style, {left: (G.cx[c] - h) + 'px', top: (G.cy[r] - h) + 'px', width: 2 * h + 'px', height: 2 * h + 'px', background: G.bg});
+    wrap.appendChild(d);
+  }
+  document.getElementById('score').textContent = score;
+});
+window.mockState = () => ({score, untrusted, board: G.board});
+</script></body></html>

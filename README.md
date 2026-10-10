@@ -154,6 +154,19 @@ CPU 4코어, 32채널×3블록, 약 20분 학습. 같은 100판 평가 (탐욕 1
 - 실제 브라우저에서는 아직 검증 전 (이 개발 환경에서 해당 사이트 접속 불가)
 - 공개 랭킹이 있는 게임이라면 봇 점수는 등록하지 말 것
 
+### 브라우저 직접 제어 (`play_web.py`, 권장)
+`play.py`(화면 캡처 + OS 마우스)는 실제 환경에서 드래그가 반영되지 않았다(같은 수 3회 실패).
+Playwright로 브라우저 안에서 캡처하고 마우스 입력을 보내면 화면 배율, 창 위치, 가려짐 문제가 사라진다.
+게임 코드와 점수는 건드리지 않고, 사람이 하는 것과 같은 마우스 입력(isTrusted)만 보낸다.
+
+가짜 게임 페이지(`tools/mock_game.html`: 드래그한 사각형 안 사과 합이 10이면 제거, 신뢰된 입력만 처리)로 검증:
+
+| 보드 | 화면 배율 | play 점수 | 페이지 점수 | 비신뢰 입력 | 시간 |
+|---|---|---|---|---|---|
+| 1 | 100% | 170 | 170 | 0 | 46s |
+| 9 | 150% | 140 | 140 | 0 | 32s |
+| 5 | 200% | 100 | 100 | 0 | 20s |
+
 ### 사용법
 ```bash
 pip install -r requirements.txt
@@ -166,6 +179,7 @@ python train_az.py --minutes 60 --games 128 --sims 64                  # AlphaZe
 python solve_image.py assets/board_1.png                          # 스크린샷 -> 보드 인식 -> 둘 수 순서
 python play.py --dry-run                                               # (본인 PC) 화면 인식과 첫 수만 확인
 python play.py                                                         # (본인 PC) 자동 플레이
+python play_web.py --url "게임 주소"                                   # (본인 PC, 권장) 브라우저 직접 제어
 python evaluate.py --ckpt checkpoints_az/last.pt --boards 100 --mcts 64
 python evaluate.py --ckpt checkpoints_az/last.pt --mcts 64 --real flat   # 실제 스크린샷 보드로 평가
 ```
