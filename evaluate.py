@@ -5,8 +5,10 @@
     python evaluate.py --ckpt checkpoints_az/best.pt --boards 100 --mcts 64
 """
 import argparse
+import os
 import time
 
+import numpy as np
 import torch
 
 from applegame.env import RectIndex
@@ -33,13 +35,22 @@ def main():
     p.add_argument("--dist", choices=["uniform", "round", "real", "flat"], default="uniform",
                    help="보드 분포: uniform = 1~9 균등, round(=real) = 둥근 사과 버전 추정, flat = 납작한 사과 버전 추정")
     p.add_argument("--mcts", type=int, default=0, help="MCTS 시뮬레이션 횟수 (0이면 생략)")
+    p.add_argument("--real", default=None,
+                   help="생성 보드 대신 실제 스크린샷 라벨로 평가. 예: flat(납작한 사과 5~10), round(둥근 사과 1~4), 또는 5,6,7")
     p.add_argument("--rollout", type=int, default=0, help="롤아웃 탐색으로 평가할 보드 수 (느림, 0이면 생략)")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = p.parse_args()
     print(f"장치: {args.device}", flush=True)
 
     rects = RectIndex(device=args.device)
-    boards = eval_boards(args.boards, device=args.device, dist=args.dist)
+    if args.real:
+        ids = {"round": "1,2,3,4", "flat": "5,6,7,8,9,10"}.get(args.real, args.real)
+        here = os.path.dirname(os.path.abspath(__file__))
+        boards = torch.tensor(np.stack([np.loadtxt(os.path.join(here, "assets", f"board_{i}.txt"), dtype=int)
+                                        for i in ids.split(",")]), dtype=torch.int8, device=args.device)
+        print(f"실제 보드 {ids} ({len(boards)}장)")
+    else:
+        boards = eval_boards(args.boards, device=args.device, dist=args.dist)
     runs = [("무작위(유효 수)", random_policy), ("탐욕(최소 제거)", greedy_min_policy)]
     model = None
     if args.ckpt:

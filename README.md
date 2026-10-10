@@ -118,6 +118,18 @@ CPU 4코어, 32채널×3블록, 약 20분 학습. 같은 100판 평가 (탐욕 1
 | 롤아웃 탐색 | 162.2 | 15% | 75% | 24s (수당 약 0.3s) |
 | AZ(균등 보드로 학습) + MCTS 64회 | 161.9 | 10% | 70% | 1.6s |
 
+**납작한 사과 버전 학습 결과 (Colab T4, `--dist flat`, 64채널×4블록, 60분)** — 생성 보드 100판
+
+| 방법 | 평균 | 120점 이상 | 판당 시간 |
+|---|---|---|---|
+| 무작위 | 109.1 | 19% | 3ms |
+| 탐욕 | 120.4 | 53% | 1ms |
+| 정책망 단독 | 120.1 | 48% | 6ms |
+| **MCTS 64회** | **129.4** | **78%** | 1.0s (수당 약 20ms) |
+
+검증 MCTS 점수는 반복 5회(약 15분)에 130에 도달한 뒤 그대로라 15분 학습으로 충분하다.
+정책망 단독은 이번에도 탐욕과 같다.
+
 ### 사용법
 ```bash
 pip install -r requirements.txt
@@ -129,6 +141,7 @@ python evaluate.py --boards 50 --rollout 50                            # 롤아�
 python train_az.py --minutes 60 --games 128 --sims 64                  # AlphaZero식 학습 (GPU 권장)
 python solve_image.py assets/board_1.png                          # 스크린샷 -> 보드 인식 -> 둘 수 순서
 python evaluate.py --ckpt checkpoints_az/last.pt --boards 100 --mcts 64
+python evaluate.py --ckpt checkpoints_az/last.pt --mcts 64 --real flat   # 실제 스크린샷 보드로 평가
 ```
 `train.py`의 기본값은 64채널 4블록, 탐욕 초기화 20입니다. `evaluate.py`의 `--channels/--blocks`는 학습할 때와 같게 맞춰야 합니다.
 
