@@ -41,11 +41,22 @@ def _runs(profile, thresh):
     return runs
 
 
+def _apple_runs(profile, base_thresh):
+    """빨간 픽셀 투영에서 사과 줄(또는 열) 구간을 찾는다.
+    사과 꼭지(갈색)나 숫자 획처럼 빨간 픽셀이 적은 부분이 따로 잡히지 않도록
+    기준값을 최대값의 20% 이상으로 잡고, 가장 긴 구간의 30%보다 짧은 구간은 버린다."""
+    runs = _runs(profile, max(base_thresh, 0.2 * profile.max()))
+    if not runs:
+        return runs
+    longest = max(e - s + 1 for s, e in runs)
+    return [(s, e) for s, e in runs if e - s + 1 >= 0.3 * longest]
+
+
 def detect_grid(img):
     """사과가 꽉 찬 화면에서 격자를 찾는다. 반환: (열 중심 17개, 행 중심 10개, 칸 크기)."""
     red = red_mask(load_rgb(img))
-    cols = _runs(red.sum(0), red.shape[0] * 0.04)
-    rows = _runs(red.sum(1), red.shape[1] * 0.025)
+    cols = _apple_runs(red.sum(0), red.shape[0] * 0.04)
+    rows = _apple_runs(red.sum(1), red.shape[1] * 0.025)
     if len(cols) != COLS or len(rows) != ROWS:
         raise ValueError(f"격자 인식 실패: 열 {len(cols)}개, 행 {len(rows)}개 (기대 {COLS}x{ROWS}). "
                          "사과가 모두 있는 시작 화면의 게임판 영역만 캡처했는지 확인하세요.")

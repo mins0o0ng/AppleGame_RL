@@ -67,7 +67,13 @@ def drag_box(grid, move, expand=0.42):
 def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print):
     rects = RectIndex()
     img = screen.capture()
-    grid = locate_grid(img)
+    try:
+        grid = locate_grid(img)
+    except ValueError:
+        from PIL import Image
+        Image.fromarray(np.ascontiguousarray(img)).save("capture_fail.png")
+        log("게임판을 찾지 못했습니다. 캡처한 화면을 capture_fail.png로 저장했습니다 (이 파일을 보내 주세요).")
+        raise
     log(f"격자 찾음: 칸 크기 {grid[2]:.0f}px, 좌상단 칸 중심 ({grid[0][0]:.0f}, {grid[1][0]:.0f})")
     start, score, moves, fails = time.time(), 0, 0, 0
     board, margin = read_board(img, grid)
