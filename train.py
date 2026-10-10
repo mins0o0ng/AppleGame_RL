@@ -35,8 +35,8 @@ def parse_args():
                    help="초기 정책을 탐욕(최소 제거) 쪽으로 기울이는 세기. 0이면 백지에서 시작")
     p.add_argument("--eval-every", type=int, default=20)
     p.add_argument("--eval-boards", type=int, default=200)
-    p.add_argument("--dist", choices=["uniform", "real"], default="uniform",
-                   help="보드 분포: uniform = 1~9 균등, real = 실제 게임 추정 분포(작은 숫자 많음, 합 10의 배수)")
+    p.add_argument("--dist", choices=["uniform", "round", "real", "flat"], default="uniform",
+                   help="보드 분포: uniform = 1~9 균등, round(=real) = 둥근 사과 버전 추정, flat = 납작한 사과 버전 추정")
     p.add_argument("--out", default="checkpoints")
     p.add_argument("--resume", default=None)
     p.add_argument("--seed", type=int, default=0)

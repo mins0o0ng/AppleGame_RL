@@ -30,8 +30,8 @@ def main():
     p.add_argument("--boards", type=int, default=1000)
     p.add_argument("--beam", type=int, default=0, help="빔 폭 (0이면 빔 서치 생략)")
     p.add_argument("--topk", type=int, default=8)
-    p.add_argument("--dist", choices=["uniform", "real"], default="uniform",
-                   help="보드 분포: uniform = 1~9 균등, real = 실제 게임 추정 분포(작은 숫자 많음, 합 10의 배수)")
+    p.add_argument("--dist", choices=["uniform", "round", "real", "flat"], default="uniform",
+                   help="보드 분포: uniform = 1~9 균등, round(=real) = 둥근 사과 버전 추정, flat = 납작한 사과 버전 추정")
     p.add_argument("--mcts", type=int, default=0, help="MCTS 시뮬레이션 횟수 (0이면 생략)")
     p.add_argument("--rollout", type=int, default=0, help="롤아웃 탐색으로 평가할 보드 수 (느림, 0이면 생략)")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")

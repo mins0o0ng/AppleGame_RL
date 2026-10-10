@@ -84,7 +84,7 @@ def _composition(k, rng):
             return rng.permutation(parts)
 
 
-def reverse_board(rng, max_h=3, max_w=4, sizes=(2, 3), size_p=(0.6, 0.4)):
+def reverse_board(rng, max_h=3, max_w=4, sizes=(2, 3), size_p=(0.6, 0.4), frac=1.0):
     """실제 게임(기존 사과 디자인) 보드를 흉내 내는 역순 생성기.
 
     빈 칸만 있는 사각형(최대 max_h x max_w)을 고르고, 그 안 일부 칸(2~3개)에 합이 10인 숫자를 채우는 것을 반복한다.
@@ -93,7 +93,7 @@ def reverse_board(rng, max_h=3, max_w=4, sizes=(2, 3), size_p=(0.6, 0.4)):
     스크린샷 4장과 비교: 처음 가능 수 93 vs 88.5, 탐욕 159 vs 161.5, 작은 숫자 편중도 비슷함 (README 참고)."""
     b = np.zeros((ROWS, COLS), np.int64)
     fails = 0
-    while fails < 500:
+    while fails < 500 and (b > 0).mean() < frac:
         h, w = rng.integers(1, max_h + 1), rng.integers(1, max_w + 1)
         k = rng.choice(sizes, p=size_p)
         if h * w < k:
@@ -115,18 +115,25 @@ def reverse_board(rng, max_h=3, max_w=4, sizes=(2, 3), size_p=(0.6, 0.4)):
             return b
 
 
+# 실제 게임 버전별 추정 생성 설정 (assets/board_*.png 분석, README 참고)
+#   round: 둥근 사과 버전 - 보드 전체를 합 10 묶음으로 역순 생성 (작은 숫자 많음, 거의 다 지울 수 있음)
+#   flat:  납작한 사과 버전 - 거의 균등 무작위 + 합 10의 배수, 묶음은 약 10%만
+DISTS = {"round": dict(frac=1.0), "real": dict(frac=1.0), "flat": dict(frac=0.1)}
+
+
 def sample_boards(k, gen=None, dist="uniform", device="cpu"):
     """보드 k개 생성.
-    uniform: 1~9 균등 (기존)
-    real:    실제 게임(기존 사과 디자인) 추정 생성 방식 (reverse_board)"""
+    uniform:       1~9 균등 (기존)
+    round (=real): 둥근 사과 버전 추정 생성 방식
+    flat:          납작한 사과 버전 추정 생성 방식"""
     if dist == "uniform":
         return torch.randint(1, 10, (k, ROWS, COLS), generator=gen, device=device, dtype=torch.int8)
-    if dist != "real":
+    if dist not in DISTS:
         raise ValueError(f"알 수 없는 분포: {dist}")
     gdev = gen.device if gen is not None else "cpu"
     seed = int(torch.randint(0, 2**31 - 1, (1,), generator=gen, device=gdev))
     rng = np.random.default_rng(seed)
-    boards = np.stack([reverse_board(rng) for _ in range(k)])
+    boards = np.stack([reverse_board(rng, **DISTS[dist]) for _ in range(k)])
     return torch.from_numpy(boards).to(torch.int8).to(device)
 
 

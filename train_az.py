@@ -40,8 +40,8 @@ def parse_args():
     p.add_argument("--greedy-prior", type=float, default=20.0)
     p.add_argument("--eval-every", type=int, default=5)
     p.add_argument("--eval-mcts", type=int, default=32, help="MCTS 평가 판 수 (0이면 생략)")
-    p.add_argument("--dist", choices=["uniform", "real"], default="uniform",
-                   help="보드 분포: uniform = 1~9 균등, real = 실제 게임 추정 분포(작은 숫자 많음, 합 10의 배수)")
+    p.add_argument("--dist", choices=["uniform", "round", "real", "flat"], default="uniform",
+                   help="보드 분포: uniform = 1~9 균등, round(=real) = 둥근 사과 버전 추정, flat = 납작한 사과 버전 추정")
     p.add_argument("--out", default="checkpoints_az")
     p.add_argument("--resume", default=None)
     p.add_argument("--seed", type=int, default=0)
