@@ -10,8 +10,9 @@ play.py(화면 캡처 + OS 마우스)와 달리, 웹페이지 안에서 캡처�
     (설치된 Chrome을 쓰므로 브라우저를 따로 받을 필요 없음. Chrome이 없으면: python -m playwright install chromium)
 
 사용:
-    python play_web.py --url "게임 주소"            # 새 Chrome 창이 열림 -> 게임 시작 -> 사과판이 보이면 터미널에서 Enter
-    python play_web.py --url "게임 주소" --dry-run  # 인식과 첫 수만 확인 (web_dry_run.png 저장)
+    python play_web.py            # 새 Chrome 창에 메인 페이지가 열림 -> 그 창에서 게임 시작 -> 사과판이 보이면 터미널에서 Enter
+    python play_web.py --dry-run  # 인식과 첫 수만 확인 (web_dry_run.png 저장)
+    게임 링크(/play/...)는 일회용일 수 있으므로 붙여 넣지 말고, 열린 창에서 직접 게임을 시작한다.
 """
 import argparse
 import io
@@ -45,7 +46,7 @@ class BrowserScreen:
         m.up()
 
 
-def open_page(pw, url, browser="chrome", cdp=None):
+def open_page(pw, url, browser="chrome", cdp=None, profile=None):
     if cdp:
         # 이미 열어 둔 Chrome에 붙기: chrome.exe --remote-debugging-port=9222 로 실행한 경우
         b = pw.chromium.connect_over_cdp(cdp)
@@ -59,6 +60,13 @@ def open_page(pw, url, browser="chrome", cdp=None):
         kw["channel"] = "chrome"
     elif browser not in ("chromium", None):
         kw["executable_path"] = browser
+    if profile:
+        # 전용 프로필 폴더: 로그인/쿠키/사이트 설정이 다음 실행에도 남는다
+        ctx = pw.chromium.launch_persistent_context(profile, no_viewport=True, **kw)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        if url:
+            page.goto(url)
+        return ctx, page
     b = pw.chromium.launch(**kw)
     page = b.new_page(no_viewport=True)
     if url:
@@ -68,7 +76,10 @@ def open_page(pw, url, browser="chrome", cdp=None):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--url", default=None, help="게임 주소")
+    p.add_argument("--url", default="https://apple.oshizi.com/ko/",
+                   help="처음 열 주소. 게임 링크는 일회용일 수 있으니 메인 페이지에서 직접 게임을 시작하는 것을 권장")
+    p.add_argument("--profile", default="chrome_profile",
+                   help="전용 Chrome 프로필 폴더 (접속 정보 유지). 빈 문자열이면 매번 새 프로필")
     p.add_argument("--browser", default="chrome", help="chrome(설치된 Chrome) / chromium / 브라우저 실행 파일 경로")
     p.add_argument("--cdp", default=None, help="이미 열린 Chrome에 붙기 (예: http://localhost:9222)")
     p.add_argument("--dry-run", action="store_true")
@@ -79,7 +90,7 @@ def main():
 
     from playwright.sync_api import sync_playwright
     with sync_playwright() as pw:
-        browser, page = open_page(pw, args.url, args.browser, args.cdp)
+        browser, page = open_page(pw, args.url, args.browser, args.cdp, args.profile or None)
         if not args.no_wait:
             input("브라우저에서 게임을 시작하고 사과판이 다 보이면 여기서 Enter를 누르세요...")
         screen = BrowserScreen(page)
