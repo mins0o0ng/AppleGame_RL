@@ -108,6 +108,8 @@ def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print):
     log(f"격자 찾음: 칸 크기 {grid[2]:.0f}px, 좌상단 칸 중심 ({grid[0][0]:.0f}, {grid[1][0]:.0f})")
     start, score, moves, fails = time.time(), 0, 0, 0
     board, margin = read_board(img, grid)
+    rec = open("play_log.txt", "w", encoding="utf-8")
+    rec.write("start\n" + "\n".join(" ".join(map(str, r)) for r in board) + "\n")
     while time.time() - start < time_limit:
         weak = int((margin < 1.0).sum())
         if weak:
@@ -137,26 +139,50 @@ def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print):
                 log("연속 실패: 디버그 이미지(debug_nochange_*.png)를 저장하고 중단합니다.")
                 break
             continue
+        gained = n
         if (new != expected).any():
-            # 계획한 사과 말고 다른 칸도 바뀜: 화면 전환/효과/스크롤 등. 격자를 다시 찾아 한 번 더 확인
+            # 계획한 사과 말고 다른 칸도 바뀜. 콤보/점수 팝업처럼 잠깐 가리는 효과일 수 있으니 2초까지 다시 읽어 본다
             bad = int((new != expected).sum())
-            try:
-                grid = locate_grid(img)
-                new, margin = read_board(img, grid)
-            except ValueError:
-                pass
+            t0 = time.time()
+            while (new != expected).any() and time.time() - t0 < 2.0:
+                time.sleep(0.2)
+                img = screen.capture()
+                try:
+                    new, margin = read_board(img, grid)
+                except ValueError:
+                    continue
             if (new != expected).any():
-                _save_debug(before, img, grid, move, "unexpected")
-                log(f"  !! 예상과 다른 화면 변화 ({bad}칸). 점수에 넣지 않고 중단합니다. "
-                    "debug_unexpected_before.png / after.png를 보내 주세요.")
-                break
-            log("  (격자 위치가 바뀌어 다시 찾음)")
+                try:   # 게임판 위치가 바뀌었을 수 있음
+                    g2 = locate_grid(img)
+                    n2, m2 = read_board(img, g2)
+                    if not (n2 != expected).any():
+                        grid, new, margin = g2, n2, m2
+                        log("  (격자 위치가 바뀌어 다시 찾음)")
+                except ValueError:
+                    pass
+            if (new != expected).any():
+                only_removed = ((new == board) | (new == 0)).all()
+                extra = int(((expected > 0) & (new == 0)).sum())
+                if only_removed and extra <= 6 and (margin[new > 0] >= 1.0).all():
+                    # 사과가 줄어들기만 함 -> 새로 읽은 화면을 믿고 계속
+                    gained = int((board > 0).sum() - (new > 0).sum())
+                    _save_debug(before, img, grid, move, f"resync{moves + 1}")
+                    log(f"  !! 예상과 {bad}칸 다름 -> 화면을 새로 읽은 보드로 계속 (지운 사과 {gained}개)")
+                else:
+                    _save_debug(before, img, grid, move, "unexpected")
+                    log(f"  !! 큰 화면 변화 ({bad}칸): 게임 종료 화면이거나 화면이 바뀐 것으로 보고 멈춥니다. "
+                        "debug_unexpected_before.png / after.png와 play_log.txt를 보내 주세요.")
+                    break
         fails = 0
-        score += n
+        score += gained
         moves += 1
-        log(f"{moves:3d}수 {move} +{n} = {score}점 ({time.time() - start:5.1f}초)")
+        log(f"{moves:3d}수 {move} +{gained} = {score}점 ({time.time() - start:5.1f}초)")
+        rec.write(f"move {moves} {move} +{gained}\n" + "\n".join(" ".join(map(str, r)) for r in new) + "\n")
+        rec.flush()
         board = new
-    log(f"끝: {score}점, {moves}수, {time.time() - start:.1f}초")
+    log(f"끝: {score}점, {moves}수, {time.time() - start:.1f}초 (수 기록: play_log.txt)")
+    rec.write(f"end {score} {moves}\n")
+    rec.close()
     return score
 
 
