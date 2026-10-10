@@ -168,6 +168,14 @@ def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print):
                     gained = int((board > 0).sum() - (new > 0).sum())
                     _save_debug(before, img, grid, move, f"resync{moves + 1}")
                     log(f"  !! 예상과 {bad}칸 다름 -> 화면을 새로 읽은 보드로 계속 (지운 사과 {gained}개)")
+                elif (new[r1:r2 + 1, c1:c2 + 1] == 0).all():
+                    # 계획한 칸은 모두 비었고 화면이 크게 바뀜 = 마지막 수를 둔 직후 게임 종료 창이 뜬 경우
+                    score += n
+                    moves += 1
+                    log(f"{moves:3d}수 {move} +{n} = {score}점 ({time.time() - start:5.1f}초)")
+                    rec.write(f"move {moves} {move} +{n} (마지막 수, 게임 종료 화면)\n")
+                    log("게임 종료 화면을 확인했습니다.")
+                    break
                 else:
                     _save_debug(before, img, grid, move, "unexpected")
                     log(f"  !! 큰 화면 변화 ({bad}칸): 게임 종료 화면이거나 화면이 바뀐 것으로 보고 멈춥니다. "
