@@ -6,6 +6,12 @@
   width=1이면 기존 롤아웃 탐색과 같다.
 - noisy_playouts: 탐욕 규칙에 무작위성을 섞어 여러 판을 한꺼번에 두고 최고점을 고른다 (비교용).
 - plan_game: 시간 예산 안에서 빔 폭을 늘려 가며 가장 좋은 수 순서를 반환.
+- mobility_beam: 롤아웃 없이 (점수 + lam x 남은 유효 수)로 넓은 빔. 실험용 (README "다른 롤아웃 규칙" 참고).
+
+탐욕 대신 다른 규칙도 시험했다 (실제 보드 5장, 롤아웃 빔 폭 4 기준 평균):
+  탐욕 137.6 / 개선 규칙(겹침 감점 + 큰 숫자 가점) 138.0 / 선택지 빔 132.8.
+  보드마다 이기는 방법은 달랐지만, 120초 예산 안에서는 여러 방법을 섞은 조합(136.8)이
+  탐욕 빔 폭 4를 시드만 바꿔 반복하는 쪽(138.2)보다 낮아서 기본값은 후자로 둔다.
 """
 import time
 
@@ -17,7 +23,7 @@ from .policies import evaluate, greedy_min_policy
 
 
 @torch.no_grad()
-def rollout_beam(board, rects, width=4, deadline=None, seed=0):
+def rollout_beam(board, rects, width=4, deadline=None, seed=0, rollout=None):
     """반환: (점수, [(r1, c1, r2, c2), ...]). deadline을 넘기면 지금까지 찾은 가장 좋은 완성 경로를 반환."""
     beam = [(board.clone(), 0, [])]
     best = (0, [])
@@ -46,7 +52,7 @@ def rollout_beam(board, rects, width=4, deadline=None, seed=0):
         first = torch.full((len(uniq),), len(inv), dtype=torch.long)
         first.scatter_reduce_(0, inv, torch.arange(len(inv)), "amin")
         child, acts, parents, acc = child[first], acts[first], parents[first], acc[first]
-        total = acc + evaluate(greedy_min_policy, child, rects, seed=seed)
+        total = acc + evaluate(rollout or greedy_min_policy, child, rects, seed=seed)
         order = total.argsort(descending=True)[:width]
         beam = [(child[j], int(acc[j]), beam[int(parents[j])][2] + [tuple(rects.rects[acts[j]].tolist())])
                 for j in order.tolist()]
@@ -134,4 +140,43 @@ def plan_game(board, rects, budget=50.0, log=print, init=None):
         if s > best[0]:
             best = (s, mv)
             log(f"  [계획] 무작위 추가 512판: {s}점 <- 최고 ({time.time() - t0:.0f}초)")
+    return best
+
+
+@torch.no_grad()
+def mobility_beam(board, rects, width=200, lam=1.0, deadline=None):
+    """롤아웃 없이 (지금까지 점수 + lam x 둔 뒤 남는 유효 수 개수)로 상위 width개 상태를 남기며 끝까지 진행.
+    '선택지를 많이 남기는 수'가 탐욕 규칙보다 강했던 실험 결과를 넓은 빔으로 활용한다.
+    반환: (점수, [(r1, c1, r2, c2), ...])"""
+    beam_b = board[None].clone()
+    beam_s = torch.zeros(1, dtype=torch.long)
+    beam_m = [[]]
+    best = (0, [])
+    mask, n = rects.legal(beam_b)
+    while len(beam_b):
+        has = mask.any(1)
+        for i in (~has).nonzero().squeeze(1).tolist():
+            if int(beam_s[i]) > best[0]:
+                best = (int(beam_s[i]), beam_m[i])
+        if not has.any():
+            break
+        idx = mask.nonzero()                              # (K, 2): (부모, 행동)
+        par, act = idx[:, 0], idx[:, 1]
+        child = beam_b[par].masked_fill(rects.cover[act].view(-1, ROWS, COLS), 0)
+        acc = beam_s[par] + n[par, act]
+        uniq, inv = torch.unique(child.flatten(1), dim=0, return_inverse=True)
+        first = torch.full((len(uniq),), len(inv), dtype=torch.long)
+        first.scatter_reduce_(0, inv, torch.arange(len(inv)), "amin")
+        child, par, act, acc = child[first], par[first], act[first], acc[first]
+        cm, cn = rects.legal(child)
+        val = acc.float() + lam * cm.sum(1).float()
+        order = val.argsort(descending=True)[:width]
+        beam_m = [beam_m[int(par[j])] + [tuple(rects.rects[int(act[j])].tolist())] for j in order.tolist()]
+        beam_b, beam_s, mask, n = child[order], acc[order], cm[order], cn[order]
+        if deadline is not None and time.time() > deadline:
+            for i in range(len(beam_b)):   # 시간 초과: 남은 빔을 탐욕으로 마무리
+                s2, mv2 = greedy_finish(beam_b[i], rects)
+                if int(beam_s[i]) + s2 > best[0]:
+                    best = (int(beam_s[i]) + s2, beam_m[i] + mv2)
+            break
     return best
