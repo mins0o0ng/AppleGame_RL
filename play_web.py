@@ -91,6 +91,8 @@ def main():
     args = p.parse_args()
 
     from playwright.sync_api import sync_playwright
+    from applegame.planner import warmup
+    print("빠른 탐색(numba) 사용" if warmup() else "numba 없음: 기존 탐색 사용", flush=True)
     with sync_playwright() as pw:
         browser, page = open_page(pw, args.url, args.browser, args.cdp, args.profile or None)
         if not args.no_wait:

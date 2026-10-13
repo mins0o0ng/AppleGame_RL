@@ -180,3 +180,42 @@ def mobility_beam(board, rects, width=200, lam=1.0, deadline=None):
                     best = (int(beam_s[i]) + s2, beam_m[i] + mv2)
             break
     return best
+
+
+def plan_game_fast(board, rects=None, budget=50.0, log=print):
+    """numba 버전 플래너 (기존 torch 버전보다 약 60배 빠름).
+    1) 롤아웃 빔 폭 16으로 첫 답 (1~2초)  2) 남은 시간 동안 폭 32를 시드를 바꿔 반복.
+    실제 보드 5장, 판당 약 37초: 폭 32 x 시드 12개 최고 평균 142.8 (폭 64 x 6개 142.2, 폭 512 1회 141.6)."""
+    from . import fast
+    b = np.asarray(board, np.int8).reshape(-1)
+    full = int((b > 0).sum())
+    t0 = time.time()
+    deadline = t0 + budget
+    best = fast.beam_search(b, 16, 0, deadline=deadline, seed=0)
+    log(f"  [계획] 예산 {budget:.0f}초 | 빔 16: {best[0]}점 ({time.time() - t0:.1f}초)")
+    seed, took = 1, None
+    while best[0] < full:
+        left = deadline - time.time()
+        if took is not None and took * 1.2 > left:
+            break
+        t1 = time.time()
+        s, mv = fast.beam_search(b, 32, 0, deadline=deadline, seed=seed)
+        took = time.time() - t1
+        if s > best[0]:
+            best = (s, mv)
+            log(f"  [계획] 빔 32 시드 {seed}: {s}점 <- 최고 ({time.time() - t0:.0f}초)")
+        seed += 1
+    log(f"  [계획] 빔 32 {seed - 1}회 실행")
+    return best
+
+
+def warmup():
+    """numba 첫 컴파일(수십 초 걸릴 수 있음)을 게임 시작 전에 끝낸다. numba가 없으면 False."""
+    try:
+        from . import fast
+    except ImportError:
+        return False
+    b = np.random.default_rng(0).integers(1, 10, 170).astype(np.int8)
+    fast.beam_search(b, 2, 0)
+    fast.eval_children(np.stack([b, b]), 0, 1, 0.01)
+    return True

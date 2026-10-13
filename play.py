@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 from applegame.env import RectIndex
-from applegame.planner import noisy_playouts, plan_game
+from applegame.planner import noisy_playouts, plan_game, plan_game_fast, warmup
 from applegame.search import rollout_best_move
 from applegame.vision import locate_grid, read_board
 
@@ -116,12 +116,23 @@ def play(screen, time_limit=115.0, dry_run=False, settle=0.15, log=print, plan_t
     plan = []
     if plan_time != 0 and not dry_run:
         # 게임은 결정적: 처음 보드로 남는 시간 동안 여러 판을 미리 풀어 보고 가장 좋은 수 순서를 그대로 둔다
-        quick = noisy_playouts(torch.tensor(board), rects, 512, seed=0)
+        try:
+            from applegame import fast
+            quick = fast.beam_search(board, 4, 0)          # 몇 수 정도 걸릴지 빠르게 확인 (0.5초 이내)
+            use_fast = True
+        except ImportError:
+            quick = noisy_playouts(torch.tensor(board), rects, 512, seed=0)
+            use_fast = False
         if plan_time < 0:
             plan_time = time_limit - (time.time() - start) - len(quick[1]) * move_sec - safety
             log(f"자동 계획 시간: {plan_time:.0f}초 (남은 {time_limit - (time.time() - start):.0f}초 - "
                 f"{len(quick[1])}수 x {move_sec}초 - 여유 {safety:.0f}초)")
-        target, plan = plan_game(torch.tensor(board), rects, max(plan_time, 0), log, init=quick)
+        if use_fast:
+            target, plan = plan_game_fast(board, rects, max(plan_time, 0), log)
+            if quick[0] > target:
+                target, plan = quick
+        else:
+            target, plan = plan_game(torch.tensor(board), rects, max(plan_time, 0), log, init=quick)
         log(f"계획 완료: 예상 {target}점, {len(plan)}수 ({time.time() - start:.1f}초)")
     while time.time() - start < time_limit:
         weak = int((margin < 1.0).sum())
@@ -230,6 +241,8 @@ def main():
     p.add_argument("--move-sec", type=float, default=0.9, help="한 수 실행에 걸리는 시간 추정(초). 시간이 모자라면 늘리기")
     args = p.parse_args()
 
+    print("탐색 코드 준비 중 (처음 한 번은 컴파일 때문에 수십 초 걸릴 수 있음)...", flush=True)
+    print("빠른 탐색(numba) 사용" if warmup() else "numba 없음: 기존 탐색 사용 (pip install numba 권장)", flush=True)
     screen = Screen(args.monitor, args.drag_time)
     for i in range(int(args.countdown), 0, -1):
         print(f"{i}...", flush=True)
