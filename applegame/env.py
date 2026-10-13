@@ -34,6 +34,7 @@ class RectIndex:
         r1, c1, r2, c2 = _build_actions(rows, cols)
         self.num_actions = len(r1)
         self.rects = torch.stack([r1, c1, r2, c2], 1)
+        self.lookup = {tuple(x): i for i, x in enumerate(self.rects.tolist())}   # (r1, c1, r2, c2) -> 행동 번호
         rr = torch.arange(rows).view(1, rows, 1)
         cc = torch.arange(cols).view(1, 1, cols)
 

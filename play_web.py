@@ -83,18 +83,23 @@ def main():
     p.add_argument("--browser", default="chrome", help="chrome(설치된 Chrome) / chromium / 브라우저 실행 파일 경로")
     p.add_argument("--cdp", default=None, help="이미 열린 Chrome에 붙기 (예: http://localhost:9222)")
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--time-limit", type=float, default=118.0)
+    p.add_argument("--time-limit", type=float, default=115.0)
     p.add_argument("--settle", type=float, default=0.25, help="드래그 후 화면 반영을 기다리는 시간(초)")
+    p.add_argument("--plan-time", type=float, default=-1, help="미리 계산 시간(초). -1 = 자동")
+    p.add_argument("--move-sec", type=float, default=0.9)
     p.add_argument("--no-wait", action="store_true", help="Enter 입력 없이 바로 시작 (테스트용)")
     args = p.parse_args()
 
     from playwright.sync_api import sync_playwright
+    from applegame.planner import warmup
+    print("빠른 탐색(numba) 사용" if warmup() else "numba 없음: 기존 탐색 사용", flush=True)
     with sync_playwright() as pw:
         browser, page = open_page(pw, args.url, args.browser, args.cdp, args.profile or None)
         if not args.no_wait:
             input("브라우저에서 게임을 시작하고 사과판이 다 보이면 여기서 Enter를 누르세요...")
         screen = BrowserScreen(page)
-        result = play(screen, args.time_limit, args.dry_run, settle=args.settle)
+        result = play(screen, args.time_limit, args.dry_run, settle=args.settle, plan_time=args.plan_time,
+                      move_sec=args.move_sec)
         if args.dry_run:
             board, grid, move = result
             from PIL import ImageDraw
