@@ -17,7 +17,7 @@ from .policies import evaluate, greedy_min_policy
 
 
 @torch.no_grad()
-def rollout_beam(board, rects, width=4, deadline=None):
+def rollout_beam(board, rects, width=4, deadline=None, seed=0):
     """반환: (점수, [(r1, c1, r2, c2), ...]). deadline을 넘기면 지금까지 찾은 가장 좋은 완성 경로를 반환."""
     beam = [(board.clone(), 0, [])]
     best = (0, [])
@@ -46,7 +46,7 @@ def rollout_beam(board, rects, width=4, deadline=None):
         first = torch.full((len(uniq),), len(inv), dtype=torch.long)
         first.scatter_reduce_(0, inv, torch.arange(len(inv)), "amin")
         child, acts, parents, acc = child[first], acts[first], parents[first], acc[first]
-        total = acc + evaluate(greedy_min_policy, child, rects)
+        total = acc + evaluate(greedy_min_policy, child, rects, seed=seed)
         order = total.argsort(descending=True)[:width]
         beam = [(child[j], int(acc[j]), beam[int(parents[j])][2] + [tuple(rects.rects[acts[j]].tolist())])
                 for j in order.tolist()]
@@ -99,35 +99,39 @@ def noisy_playouts(board, rects, num=512, noise=1.5, seed=0):
     return int(score[k]), hist[k]
 
 
-def plan_game(board, rects, budget=50.0, log=print):
+def plan_game(board, rects, budget=50.0, log=print, init=None):
     """시간 예산(초) 안에서 가장 좋은 수 순서를 찾는다.
-    1) 무작위 탐욕 512판으로 빠르게 안전한 답 확보
-    2) 빔 폭 2, 4, 8...로 늘려 가되, 직전 실행 시간으로 예상해 예산 안에 끝날 때만 시작
-       (중간에 끊긴 빔은 점수가 오히려 낮아서)
+    1) 무작위 탐욕 512판으로 빠르게 안전한 답 확보 (init로 이미 구한 답을 넘길 수 있음)
+    2) 빔 폭 2 -> 빔 폭 4를 시드(롤아웃 동점 처리 순서)를 바꿔 가며 반복.
+       실험상 빔을 8로 넓히는 것보다 폭 4를 여러 시드로 돌리는 쪽이 시간 대비 효과가 좋았다.
+       직전 실행 시간으로 예상해 예산 안에 끝날 때만 시작한다 (중간에 끊긴 빔은 점수가 낮음).
     3) 남는 시간은 무작위 판을 더 돌린다."""
     t0 = time.time()
     deadline = t0 + budget
-    best = noisy_playouts(board, rects, 512, seed=0)
-    log(f"  [계획] 무작위 512판 최고: {best[0]}점 ({time.time() - t0:.1f}초)")
+    best = init or noisy_playouts(board, rects, 512, seed=0)
+    log(f"  [계획] 예산 {budget:.0f}초 | 시작 답: {best[0]}점")
     full = int((board > 0).sum())
-    width, est = 2, None
-    while best[0] < full:
+    schedule = [(2, 0)] + [(4, sd) for sd in range(100)]
+    est = {}
+    for width, seed in schedule:
+        if best[0] >= full:
+            break
         left = deadline - time.time()
-        if est is not None and est > left:
+        guess = est.get(width, est.get(width // 2, 0) * 2.2 if est else None)
+        if guess is not None and guess > left:
             break
         t1 = time.time()
-        s, mv = rollout_beam(board, rects, width, deadline)
-        took = time.time() - t1
-        log(f"  [계획] 빔 폭 {width}: {s}점 ({time.time() - t0:.1f}초)")
+        s, mv = rollout_beam(board, rects, width, deadline, seed=seed)
+        est[width] = time.time() - t1
+        mark = ""
         if s > best[0]:
-            best = (s, mv)
-        est = took * 2.2      # 빔 폭을 2배로 하면 시간도 약 2배
-        width *= 2
+            best, mark = (s, mv), " <- 최고"
+        log(f"  [계획] 빔 폭 {width} 시드 {seed}: {s}점{mark} ({time.time() - t0:.0f}초)")
     seed = 1
     while best[0] < full and deadline - time.time() > 6:
         s, mv = noisy_playouts(board, rects, 512, seed=seed)
         seed += 1
         if s > best[0]:
             best = (s, mv)
-            log(f"  [계획] 무작위 추가 512판: {s}점 ({time.time() - t0:.1f}초)")
+            log(f"  [계획] 무작위 추가 512판: {s}점 <- 최고 ({time.time() - t0:.0f}초)")
     return best
