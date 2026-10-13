@@ -85,6 +85,7 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--time-limit", type=float, default=118.0)
     p.add_argument("--settle", type=float, default=0.25, help="드래그 후 화면 반영을 기다리는 시간(초)")
+    p.add_argument("--plan-time", type=float, default=40.0, help="시작할 때 수 순서를 미리 계산하는 시간(초)")
     p.add_argument("--no-wait", action="store_true", help="Enter 입력 없이 바로 시작 (테스트용)")
     args = p.parse_args()
 
@@ -94,7 +95,7 @@ def main():
         if not args.no_wait:
             input("브라우저에서 게임을 시작하고 사과판이 다 보이면 여기서 Enter를 누르세요...")
         screen = BrowserScreen(page)
-        result = play(screen, args.time_limit, args.dry_run, settle=args.settle)
+        result = play(screen, args.time_limit, args.dry_run, settle=args.settle, plan_time=args.plan_time)
         if args.dry_run:
             board, grid, move = result
             from PIL import ImageDraw

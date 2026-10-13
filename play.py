@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 from applegame.env import RectIndex
+from applegame.planner import plan_game
 from applegame.search import rollout_best_move
 from applegame.vision import locate_grid, read_board
 
@@ -95,7 +96,7 @@ def _save_debug(before, after, grid, move, tag):
         pic.save(f"debug_{tag}_{name}.png")
 
 
-def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print):
+def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print, plan_time=40.0):
     rects = RectIndex()
     img = screen.capture()
     try:
@@ -110,11 +111,27 @@ def play(screen, time_limit=118.0, dry_run=False, settle=0.15, log=print):
     board, margin = read_board(img, grid)
     rec = open("play_log.txt", "w", encoding="utf-8")
     rec.write("start\n" + "\n".join(" ".join(map(str, r)) for r in board) + "\n")
+    plan = []
+    if plan_time > 0 and not dry_run:
+        # 게임은 결정적: 처음 보드로 남는 시간 동안 여러 판을 미리 풀어 보고 가장 좋은 수 순서를 그대로 둔다
+        target, plan = plan_game(torch.tensor(board), rects, plan_time, log)
+        log(f"계획 완료: 예상 {target}점, {len(plan)}수 ({time.time() - start:.1f}초)")
     while time.time() - start < time_limit:
         weak = int((margin < 1.0).sum())
         if weak:
             log(f"  !! 인식 불확실 칸 {weak}개")
-        pick = rollout_best_move(torch.tensor(board), rects)
+        pick = None
+        if plan:
+            mv = plan[0]
+            m_, n_ = rects.legal(torch.tensor(board)[None])
+            idx = int(rects.lookup[mv])
+            if m_[0, idx]:
+                pick = (plan.pop(0), int(n_[0, idx]), 0)
+            else:
+                log(f"  !! 계획과 화면이 어긋남 {mv} -> 한 수씩 계산으로 전환")
+                plan = []
+        if pick is None:
+            pick = rollout_best_move(torch.tensor(board), rects)
         if pick is None:
             log("더 둘 수 있는 수가 없습니다.")
             break
@@ -201,13 +218,15 @@ def main():
     p.add_argument("--countdown", type=float, default=3.0)
     p.add_argument("--time-limit", type=float, default=118.0)
     p.add_argument("--drag-time", type=float, default=0.12, help="드래그에 쓰는 시간(초). 인식이 안 되면 늘리기")
+    p.add_argument("--plan-time", type=float, default=40.0,
+                   help="시작할 때 수 순서를 미리 계산하는 시간(초). 0이면 매 수 롤아웃만 사용")
     args = p.parse_args()
 
     screen = Screen(args.monitor, args.drag_time)
     for i in range(int(args.countdown), 0, -1):
         print(f"{i}...", flush=True)
         time.sleep(1)
-    result = play(screen, args.time_limit, args.dry_run)
+    result = play(screen, args.time_limit, args.dry_run, plan_time=args.plan_time)
     if args.dry_run:
         board, grid, move = result
         from PIL import Image, ImageDraw
